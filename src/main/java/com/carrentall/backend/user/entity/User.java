@@ -40,6 +40,7 @@ public class User {
         this.password = password;
         this.name = name;
         this.phoneNumber = phoneNumber;
-
+        this.role = Role.USER;
+        this.createdAt = LocalDateTime.now();
     }
 }

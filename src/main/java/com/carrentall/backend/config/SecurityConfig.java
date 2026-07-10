@@ -22,7 +22,7 @@ public class SecurityConfig {
         http
                 .csrf(csrf -> csrf.disable()) // POST 요청이 막히지 않게 하겠다 잠시동안
                 .authorizeHttpRequests(auth -> auth // 요청 주소별 접근 권한을 정하겠다
-                        .requestMatchers("/api/auth/signup").permitAll() // 이 주소로는 아무나 접근가능
+                        .requestMatchers("/api/auth/signup" , "/api/auth/login").permitAll() // 이 주소로는 아무나 접근가능
                         .anyRequest()
                         .authenticated()); // 위에서 허용한 주소말고 나머지 모든 요청은 로그인한 사용자만 가능
 

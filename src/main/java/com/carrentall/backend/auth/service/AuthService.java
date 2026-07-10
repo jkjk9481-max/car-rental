@@ -1,5 +1,6 @@
 package com.carrentall.backend.auth.service;
 
+import com.carrentall.backend.auth.dto.LoginRequest;
 import com.carrentall.backend.auth.dto.SignupRequest;
 import com.carrentall.backend.user.entity.User;
 import com.carrentall.backend.user.repository.UserRepository;
@@ -31,6 +32,15 @@ public class AuthService {
         User user = new User(request.getEmail(), encodePassword , request.getName(), request.getPhoneNumber());
 
         userRepository.save(user);
+    }
+
+    public void login(LoginRequest request){
+         User user = userRepository.findByEmail(request.getEmail())
+                 .orElseThrow(() -> new RuntimeException("존재하지 않는 이메일입니다"));
+
+         if(!passwordEncoder.matches(request.getPassword(), user.getPassword())){
+             throw new RuntimeException("비밀번호가 일치하지 않습니다");
+         }
 
 
 
