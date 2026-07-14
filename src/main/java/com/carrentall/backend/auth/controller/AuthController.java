@@ -1,6 +1,7 @@
 package com.carrentall.backend.auth.controller;
 
 import com.carrentall.backend.auth.dto.LoginRequest;
+import com.carrentall.backend.auth.dto.LoginResponse;
 import com.carrentall.backend.auth.dto.SignupRequest;
 import com.carrentall.backend.auth.service.AuthService;
 import jakarta.validation.Valid;
@@ -27,9 +28,8 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public String login(@RequestBody @Valid LoginRequest request){
-        authService.login(request);
-        return "로그인이 완료되었습니다";
+    public LoginResponse login(@RequestBody @Valid LoginRequest request){
+        return authService.login(request);
     }
 
 }
