@@ -99,5 +99,7 @@ public class JwtTokenProvider {
 
         return Role.valueOf(roleString);
     }
+
+
 }
 
