@@ -1338,3 +1338,308 @@ HTTP 요청 헤더에서 JWT 가져오기
 - 마이크로서비스
 
 기본 Access Token 인증 흐름을 확실히 이해하고 테스트한 뒤에 필요한 기술만 추가한다.
+# 최신 진행 상황: JwtAuthenticationFilter 기본 인증 흐름 작성
+
+## 이번 작업의 목표
+
+로그인 성공 시 발급된 JWT를 이후 HTTP 요청에서 읽고, Spring Security가 현재 요청 사용자를 인증된 사용자로 인식하도록 만드는 `JwtAuthenticationFilter`를 작성했다.
+
+로그인과 JWT 발급만 구현되어 있으면 서버는 토큰을 만들어 클라이언트에게 줄 수는 있지만, 이후 요청의 `Authorization` 헤더를 자동으로 읽고 인증해 주지는 않는다. 이 역할을 담당하는 것이 `JwtAuthenticationFilter`다.
+
+전체 흐름은 다음과 같다.
+
+```text
+클라이언트 요청
+→ Authorization 헤더 읽기
+→ Bearer 형식 확인
+→ 실제 JWT 문자열 추출
+→ JWT 유효성 검증
+→ email과 role 추출
+→ Spring Security용 권한 생성
+→ Authentication 객체 생성
+→ SecurityContext에 인증 정보 저장
+→ 다음 필터로 요청 전달
+```
+
+## 1. JwtAuthenticationFilter 클래스 생성
+
+생성한 파일:
+
+```text
+src/main/java/com/carrentall/backend/auth/jwt/JwtAuthenticationFilter.java
+```
+
+`OncePerRequestFilter`를 상속했다.
+
+```text
+JwtAuthenticationFilter extends OncePerRequestFilter
+```
+
+`OncePerRequestFilter`는 하나의 HTTP 요청에서 필터 로직이 한 번 실행되도록 도와주는 Spring 클래스다. 실제 JWT 처리 로직은 `doFilterInternal()` 메서드 안에 작성한다.
+
+## 2. JwtTokenProvider 생성자 주입
+
+필터가 JWT를 직접 해석하거나 비밀키를 관리하지 않고 기존 `JwtTokenProvider`를 사용하도록 생성자 주입을 적용했다.
+
+```text
+JwtAuthenticationFilter
+→ 요청 헤더 처리와 Spring Security 인증 등록 담당
+
+JwtTokenProvider
+→ JWT 생성, 검증, email 추출, role 추출 담당
+```
+
+역할을 나누면 JWT 규칙이 `JwtTokenProvider` 한 곳에 모이므로 관리하기 쉽다.
+
+## 3. Authorization 헤더 읽기
+
+요청에서 다음 헤더를 읽도록 작성했다.
+
+```http
+Authorization: Bearer eyJ...
+```
+
+구성은 다음과 같다.
+
+- `Authorization`: HTTP 헤더 이름
+- `Bearer `: JWT 인증 방식 표시이며 뒤에 공백 한 칸이 포함됨
+- `eyJ...`: 실제 JWT 문자열
+
+헤더가 없거나 `Bearer `로 시작하지 않으면 JWT 인증을 진행하지 않는다. 이 경우 다음 필터로 요청을 전달한 후 `return`으로 현재 필터 메서드를 종료한다.
+
+`return`이 필요한 이유는 `filterChain.doFilter()`가 다음 필터를 실행할 뿐 현재 메서드의 나머지 코드까지 자동으로 중단하지는 않기 때문이다. `return`이 없으면 `null`인 헤더에 `substring()`을 호출하는 문제가 생길 수 있다.
+
+## 4. Bearer 토큰 추출
+
+정상적인 Bearer 헤더라는 것이 확인되면 `Bearer ` 부분을 제외하고 실제 JWT만 추출한다.
+
+```text
+Bearer eyJ...
+       ↓
+eyJ...
+```
+
+`Bearer `는 공백을 포함하여 7글자이므로 `substring(7)`을 사용했다.
+
+## 5. JWT 유효성 검증
+
+추출한 토큰을 다음 메서드에 전달한다.
+
+```text
+jwtTokenProvider.validateToken(token)
+```
+
+반환 결과는 `boolean` 변수에 저장했다.
+
+```text
+true  → 서명이 정상이고 만료되지 않은 토큰
+false → 만료, 변조, 잘못된 형식 등의 문제가 있는 토큰
+```
+
+토큰에서 email이나 role을 꺼내기 전에 반드시 검증을 먼저 한다. 검증되지 않은 토큰의 내용을 신뢰하면 안 되기 때문이다.
+
+## 6. JWT에서 email과 role 추출
+
+토큰이 유효한 경우에만 기존 `JwtTokenProvider` 메서드를 사용하여 다음 정보를 추출한다.
+
+- `email`: 현재 요청 사용자가 누구인지 식별
+- `role`: 사용자가 가진 권한 확인
+
+현재 프로젝트에서는 email을 Spring Security의 principal로 사용한다.
+
+권한은 JWT 요청값을 믿는 것이 아니라, 로그인할 때 DB에서 조회한 User의 role을 토큰에 저장한 뒤 다시 꺼내 사용한다.
+
+## 7. SimpleGrantedAuthority 생성
+
+프로젝트의 `Role.USER` 또는 `Role.ADMIN` 값을 Spring Security가 이해하는 권한 객체로 변환했다.
+
+```text
+Role.USER
+→ role.name()
+→ "USER"
+→ "ROLE_" 추가
+→ "ROLE_USER"
+→ SimpleGrantedAuthority
+```
+
+`SimpleGrantedAuthority`는 직접 만든 클래스가 아니라 Spring Security가 제공하는 클래스다.
+
+현재는 권한별 API 제한을 구현하지 않지만, 인증 객체에 올바른 권한을 넣기 위해 사용한다.
+
+## 8. UsernamePasswordAuthenticationToken 생성
+
+Spring Security가 현재 사용자 인증 상태를 표현할 수 있도록 `UsernamePasswordAuthenticationToken`을 생성했다.
+
+이름에 Token이 있지만 여기서 말하는 Token은 JWT 문자열 자체가 아니다. Spring Security가 사용하는 `Authentication` 구현체다.
+
+현재 넣은 값은 다음과 같다.
+
+```text
+principal   → email
+credentials → null
+authorities → ROLE_USER 또는 ROLE_ADMIN 권한 목록
+```
+
+JWT 검증이 이미 완료됐기 때문에 비밀번호를 다시 보관하거나 비교할 필요가 없어 credentials는 `null`로 둔다.
+
+Spring Security 생성자는 권한 하나가 아니라 권한 목록을 요구하므로 `Collections.singletonList(authority)`를 사용해 하나의 권한을 목록으로 감쌌다.
+
+## 9. SecurityContextHolder에 인증 정보 저장
+
+생성한 `authentication`을 현재 SecurityContext에 저장하도록 작성했다.
+
+```text
+SecurityContextHolder
+→ 현재 SecurityContext 가져오기
+→ authentication 저장
+```
+
+Authentication 객체를 만들기만 하고 저장하지 않으면 Spring Security는 현재 요청을 계속 익명 사용자 요청으로 판단한다.
+
+SecurityContext에 저장하면 이후 Spring Security와 Controller에서 현재 사용자의 email과 권한을 사용할 수 있다.
+
+## 10. filterChain.doFilter() 위치
+
+현재 확인 과정에서 `filterChain.doFilter(request, response)`가 유효한 토큰을 처리하는 `if` 블록 안에 들어가 있었다.
+
+이 상태에서는 유효하지 않은 토큰이 들어왔을 때 다음 필터로 요청이 전달되지 않고 현재 필터에서 흐름이 멈출 수 있다.
+
+최종적으로 다음 구조가 되어야 한다.
+
+```text
+토큰이 유효함
+→ 인증 객체 생성 및 SecurityContext 저장
+
+토큰이 유효하지 않음
+→ 인증 객체를 저장하지 않음
+
+두 경우 모두
+→ 메서드 마지막에서 filterChain.doFilter(request, response) 호출
+```
+
+따라서 현재 가장 먼저 확인하거나 수정할 부분은 `filterChain.doFilter()`를 `if (validToken)` 바깥의 메서드 마지막으로 옮기는 것이다.
+
+## 현재 JwtAuthenticationFilter 구현 상태
+
+완료한 부분:
+
+- `JwtAuthenticationFilter` 클래스 생성
+- `OncePerRequestFilter` 상속
+- `JwtTokenProvider` 생성자 주입
+- Authorization 헤더 읽기
+- 헤더 null 확인
+- Bearer 형식 확인
+- 잘못된 헤더일 때 다음 필터 호출 후 return
+- `substring(7)`을 이용한 JWT 추출
+- `validateToken()` 호출
+- 유효한 토큰에서 email 추출
+- 유효한 토큰에서 role 추출
+- `ROLE_` 접두사가 붙은 `SimpleGrantedAuthority` 생성
+- `UsernamePasswordAuthenticationToken` 생성
+- `SecurityContextHolder`에 Authentication 저장
+
+아직 확인하거나 완료해야 할 부분:
+
+- 정상·비정상 토큰 모두 다음 단계로 진행하도록 마지막 `filterChain.doFilter()` 위치 수정
+- 필터가 실제로 실행되도록 `SecurityConfig`에 연결
+- 보호 API를 통한 실제 인증 동작 확인
+- 필터 동작 테스트 작성
+
+## 다음 작업 추천 목록
+
+### 1순위: filterChain.doFilter() 위치 마무리
+
+`if (validToken)` 안에 있는 마지막 `filterChain.doFilter()`를 조건문 바깥, `doFilterInternal()`의 마지막으로 옮긴다.
+
+목표:
+
+```text
+유효한 토큰 → 인증 저장 후 다음 필터
+잘못된 토큰 → 인증 저장 없이 다음 필터
+토큰 없음 → 다음 필터 호출 후 현재 메서드 종료
+```
+
+### 2순위: JwtAuthenticationFilter를 SecurityConfig에 등록
+
+필터 클래스를 만들기만 하면 실제 HTTP 요청에서 자동 실행되지 않는다. Spring Security의 필터 체인에 직접 연결해야 한다.
+
+학습할 내용:
+
+- `JwtAuthenticationFilter` 객체를 Spring이 어떻게 관리할지
+- 생성자 주입으로 `SecurityConfig`에서 필터를 받는 방법
+- `addFilterBefore()`의 의미
+- `UsernamePasswordAuthenticationFilter`보다 앞에 JWT 필터를 배치하는 이유
+
+예상 흐름:
+
+```text
+HTTP 요청
+→ JwtAuthenticationFilter
+→ Spring Security의 나머지 필터
+→ 접근 허용 또는 거부
+→ Controller
+```
+
+### 3순위: 인증 확인용 보호 API 하나 만들기
+
+필터가 실제로 동작하는지 확인할 수 있도록 간단한 보호 API를 하나 만든다.
+
+예시 목적:
+
+```text
+GET /api/users/me
+```
+
+확인할 시나리오:
+
+- Authorization 헤더 없음 → 접근 거부
+- `Bearer ` 형식이 아님 → 접근 거부
+- 변조된 JWT → 접근 거부
+- 정상 JWT → 접근 성공
+- 정상 JWT의 email이 현재 인증 사용자로 조회되는지 확인
+
+이 단계에서는 복잡한 사용자 정보 응답보다, 현재 인증된 email을 확인하는 정도가 적절하다.
+
+### 4순위: JwtAuthenticationFilter 테스트
+
+수동 테스트가 성공하면 자동 테스트를 작성한다.
+
+우선순위가 높은 테스트:
+
+- 헤더가 없으면 인증 정보가 등록되지 않음
+- Bearer 형식이 아니면 인증 정보가 등록되지 않음
+- 유효하지 않은 JWT면 인증 정보가 등록되지 않음
+- 유효한 JWT면 email과 role이 Authentication에 저장됨
+- 모든 경우 필요한 요청 흐름이 다음 필터로 전달됨
+
+### 5순위: 예외 응답 정리
+
+현재 회원가입 중복 이메일은 일반 `RuntimeException`을 사용한다. 이후 다음과 같이 정리하는 것을 추천한다.
+
+- 중복 이메일 전용 예외 생성
+- HTTP `409 Conflict` 반환
+- 로그인 실패는 기존처럼 HTTP `401 Unauthorized` 유지
+- Validation 실패 응답을 일정한 JSON 형식으로 통일
+
+이 작업은 JWT 필터 연결과 인증 흐름 테스트가 끝난 뒤 진행한다.
+
+## 지금은 구현하지 않을 기능
+
+다음 기능들은 기본 Access Token 인증 흐름을 충분히 이해하고 테스트한 뒤로 미룬다.
+
+- Refresh Token
+- Redis
+- 로그아웃 및 토큰 블랙리스트
+- 복잡한 권한별 API 제한
+- 마이크로서비스
+
+## 바로 다음 한 가지 목표
+
+현재 바로 해야 할 작업은 다음 한 가지다.
+
+```text
+JwtAuthenticationFilter에서 마지막 filterChain.doFilter(request, response)를
+if (validToken) 바깥으로 옮겨 모든 토큰 상황에서 요청 흐름이 이어지도록 만든다.
+```
+
+그 작업이 끝나면 다음 단계로 `SecurityConfig`에 JWT 필터를 등록한다.
