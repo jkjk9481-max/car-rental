@@ -1643,3 +1643,598 @@ if (validToken) 바깥으로 옮겨 모든 토큰 상황에서 요청 흐름이 
 ```
 
 그 작업이 끝나면 다음 단계로 `SecurityConfig`에 JWT 필터를 등록한다.
+
+# 최신 진행 상황: 인증 기능 1차 완료와 Vehicle 도메인 기반 작성
+
+## 이번 기록의 목적
+
+이전 기록에서는 JWT 필터를 작성하고 `SecurityConfig`에 연결하는 작업이 다음 목표였다.
+
+현재는 해당 작업과 인증 확인용 API 작성까지 완료했고, 다음 도메인인 Vehicle의 Entity, enum, Repository를 작성했다.
+
+이번 단계에서 중요하게 지킨 범위는 다음과 같다.
+
+- 차량 정보를 DB에 저장할 수 있는 구조만 만든다.
+- 아직 차량 등록 API는 만들지 않는다.
+- 아직 `VehicleService`와 `VehicleController`는 만들지 않는다.
+- 예약 기능은 만들지 않는다.
+- 이미지 업로드는 만들지 않는다.
+- 관리자 권한 처리는 만들지 않는다.
+
+즉, 지금은 차량 관련 비즈니스 기능을 구현한 것이 아니라, 앞으로 그 기능들이 사용할 데이터의 설계도를 만든 단계다.
+
+## 1. 인증 기능 1차 구현 완료
+
+현재 인증 영역에서 구현된 기능은 다음과 같다.
+
+- 회원가입
+- 로그인
+- BCrypt를 이용한 비밀번호 암호화
+- 로그인 성공 시 JWT Access Token 발급
+- JWT의 서명과 만료 검증
+- JWT에서 email과 role 추출
+- HTTP 요청의 `Authorization` 헤더에서 Bearer Token 추출
+- 유효한 JWT를 Spring Security의 Authentication으로 변환
+- Authentication을 `SecurityContextHolder`에 저장
+- JWT 필터를 Spring Security 필터 체인에 등록
+- 인증된 사용자의 email을 확인하는 보호 API 작성
+
+현재 공개 API는 다음과 같다.
+
+```text
+POST /api/auth/signup
+POST /api/auth/login
+```
+
+위 두 주소는 로그인 전에도 접근할 수 있도록 `permitAll()`이 적용되어 있다.
+
+그 외 요청은 다음 설정 때문에 인증이 필요하다.
+
+```text
+anyRequest().authenticated()
+```
+
+인증 확인용 API는 다음과 같다.
+
+```text
+GET /api/users/me
+```
+
+이 API에 정상 JWT를 보내면 `JwtAuthenticationFilter`가 토큰에서 email을 꺼내 Authentication의 principal로 저장한다.
+
+Controller에서는 다음 흐름으로 현재 사용자를 확인한다.
+
+```text
+HTTP 요청
+→ Authorization: Bearer {JWT}
+→ JwtAuthenticationFilter
+→ JWT 검증
+→ email과 role 추출
+→ Authentication 생성
+→ SecurityContextHolder에 저장
+→ UserController
+→ authentication.getName()으로 email 확인
+```
+
+이 단계의 의미는 단순히 토큰을 만드는 것에서 끝나지 않고, 이후 보호된 API에서 현재 로그인 사용자를 식별할 수 있게 되었다는 것이다.
+
+## 2. Vehicle 도메인을 시작한 이유
+
+인증 다음 단계로 차량 도메인을 시작했다.
+
+렌터카·카셰어링 서비스에서는 예약을 만들기 전에 먼저 “어떤 차량을 관리하는가”를 표현할 수 있어야 한다.
+
+따라서 구현 순서를 다음과 같이 잡았다.
+
+```text
+Vehicle Entity와 enum 설계
+→ VehicleRepository 작성
+→ 이후 차량 등록 Service
+→ 이후 차량 등록 Controller/API
+→ 이후 조회와 상태 변경
+→ 이후 예약 기능
+```
+
+현재는 첫 두 단계까지만 진행했다.
+
+## 3. Vehicle 엔티티의 역할
+
+`Vehicle` 엔티티는 시스템이 관리하는 차량 한 대를 Java 객체로 표현하는 설계도다.
+
+JPA는 `@Entity`가 붙은 `Vehicle` 객체와 DB의 `vehicles` 테이블을 연결한다.
+
+예를 들어 Java에서 Vehicle 객체 하나를 저장하면 DB에는 차량 한 대에 해당하는 행 하나가 생성된다.
+
+```text
+Vehicle 객체 한 개
+↕ JPA가 변환
+vehicles 테이블의 행 한 개
+```
+
+`@Table(name = "vehicles")`를 사용해 연결될 테이블 이름을 명확하게 지정했다.
+
+Vehicle은 다음 정보를 책임진다.
+
+- 차량의 내부 식별자
+- 제조사
+- 시간당 요금
+- 일일 요금
+- 차량번호
+- 모델명
+- 대여 방식
+- 연료 종류
+- 현재 운영 상태
+- 시스템 등록 시각
+
+Vehicle은 요청을 받는 Controller가 아니며, 복잡한 등록 절차를 처리하는 Service도 아니다.
+
+현재 Vehicle의 역할은 차량 데이터의 형태와 DB 제약조건을 표현하는 것이다.
+
+## 4. Vehicle 필드 정리
+
+### id
+
+`id`는 DB 내부에서 차량을 구분하는 기본 키다.
+
+```text
+@Id
+@GeneratedValue(strategy = GenerationType.IDENTITY)
+```
+
+`GenerationType.IDENTITY`를 사용했기 때문에 새 Vehicle을 저장할 때 애플리케이션이 ID를 직접 결정하지 않는다. DB가 순서에 따라 값을 생성한다.
+
+차량번호도 차량을 구분하지만, 차량번호는 현실 세계의 업무 데이터이고 변경 가능성이 있다. `id`는 DB 관계를 안정적으로 연결하는 내부 식별자로 사용한다.
+
+### manufacturer
+
+차량 제조사를 저장한다.
+
+예시:
+
+```text
+HYUNDAI
+KIA
+BMW
+```
+
+현재 `nullable = false`이므로 제조사 없이 차량을 저장할 수 없다.
+
+### hourlyRate
+
+시간 단위 카셰어링 등에 사용할 시간당 요금이다.
+
+현재 타입은 `int`이며 DB에서 null을 허용하지 않는다.
+
+초보자 관점에서 `int`는 객체 타입인 `Integer`와 달리 null을 가질 수 없으며, 값을 넣지 않으면 Java 기본값인 0이 될 수 있다는 점을 기억해야 한다.
+
+따라서 이후 차량 등록 기능을 만들 때 다음 검증이 필요하다.
+
+```text
+시간당 요금이 음수인지
+시간당 요금 0원을 허용할 정책인지
+```
+
+이 검증은 Entity의 DB null 제약만으로는 충분하지 않으며, 나중에 요청 DTO와 Service에서 정책을 정해야 한다.
+
+### dailyRate
+
+일 단위 렌터카 등에 사용할 일일 요금이다.
+
+현재 타입은 `int`이며 DB에서 null을 허용하지 않는다.
+
+`hourlyRate`와 마찬가지로 음수 방지 및 0원 허용 여부는 나중에 등록 기능을 만들 때 결정한다.
+
+현재는 카셰어링 차량에도 일일 요금이 반드시 필요하고 렌터카 차량에도 시간당 요금이 반드시 필요한 구조다. 이후 실제 요금 정책이 정해지면 대여 유형별로 어떤 요금이 필수인지 다시 검토할 수 있다.
+
+### vehicleNumber
+
+실제 차량 번호판 번호를 저장한다.
+
+```text
+nullable = false
+unique = true
+```
+
+`nullable = false`는 차량번호가 없는 데이터의 저장을 막는다.
+
+`unique = true`는 동일한 차량번호가 두 번 저장되는 것을 DB 수준에서 막는다.
+
+예를 들어 다음 데이터가 동시에 존재하면 시스템은 같은 실제 차량을 두 대로 잘못 인식할 수 있다.
+
+```text
+1 | 12가3456
+2 | 12가3456
+```
+
+이 상태로 예약 기능을 만들면 어느 데이터의 상태를 변경해야 하는지 알기 어려워진다. 따라서 차량번호의 unique 제약은 데이터 무결성을 지키는 중요한 장치다.
+
+Repository의 중복 검사와 DB unique 제약은 역할이 다르다.
+
+```text
+existsByVehicleNumber()
+→ 저장 전에 중복 여부를 확인해 이해하기 쉬운 오류를 주기 위함
+
+DB unique 제약
+→ 동시에 여러 요청이 들어오는 상황에서도 최종 중복 저장을 막기 위함
+```
+
+둘 중 하나만 사용하는 것이 아니라 이후 등록 기능에서는 두 가지를 함께 사용하는 것이 안전하다.
+
+### modelName
+
+차량 모델명을 저장한다.
+
+예시:
+
+```text
+AVANTE
+SONATA
+K5
+```
+
+`nullable = false`이므로 모델명 없이 저장할 수 없다.
+
+### rentalType
+
+차량의 대여 방식을 나타낸다.
+
+현재 값은 다음과 같다.
+
+```text
+CAR_SHARING  → 시간 단위 카셰어링
+RENT_A_CAR   → 일 단위 렌터카
+```
+
+String을 직접 입력받지 않고 enum을 사용하는 이유는 허용된 값만 저장하기 위해서다.
+
+문자열을 자유롭게 사용하면 다음 값들이 서로 다른 데이터로 저장될 수 있다.
+
+```text
+CAR_SHARING
+car_sharing
+CARSHARING
+카셰어링
+```
+
+enum을 사용하면 컴파일 단계에서 정해진 값만 사용할 수 있다.
+
+### fuelType
+
+차량의 연료 또는 동력 종류를 나타낸다.
+
+현재 값은 다음과 같다.
+
+```text
+GASOLINE → 가솔린
+DIESEL   → 디젤
+HYBRID   → 하이브리드
+EV       → 전기
+LPG      → 가스
+```
+
+이 값은 이후 차량 검색 필터나 차량 상세 정보에 사용할 수 있다.
+
+예를 들어 사용자가 전기차만 찾는 경우 `EV` 조건으로 조회할 수 있다.
+
+### status
+
+차량의 현재 운영 상태를 나타낸다.
+
+현재 값은 다음과 같다.
+
+```text
+AVAILABLE   → 예약 가능
+RESERVED    → 예약됨
+IN_USE      → 현재 대여 중
+MAINTENANCE → 정비 중
+UNAVAILABLE → 운영 중지
+```
+
+차량이 DB에 존재한다는 사실과 지금 예약할 수 있다는 사실은 다르다.
+
+예를 들어 정비 중인 차량은 데이터에는 존재하지만 사용자에게 대여할 수 없다. 그래서 별도의 상태 필드가 필요하다.
+
+새 Vehicle을 만들 때 status는 외부에서 전달받지 않고 서버가 다음 값으로 설정한다.
+
+```text
+VehicleStatus.AVAILABLE
+```
+
+이 설계의 의미는 새 차량이 임의로 `IN_USE`나 `RESERVED` 상태로 등록되지 않도록 생성 규칙을 한곳에 모으는 것이다.
+
+중요한 점은 status 필드나 VehicleStatus enum을 제거한 것이 아니라는 것이다.
+
+```text
+status 필드
+→ Vehicle이 계속 가지고 있어야 하는 데이터
+
+생성자의 status 매개변수
+→ 외부에서 최초 상태를 정하지 못하게 제거
+
+생성자 내부 기본값
+→ 서버가 AVAILABLE로 결정
+```
+
+이후 예약, 대여, 반납, 정비 기능을 만들면 정해진 비즈니스 규칙에 따라 status를 변경하게 된다.
+
+### createdAt
+
+차량 정보가 시스템에 등록된 시각이다.
+
+이 값도 외부에서 전달받지 않고 Vehicle 생성 시 서버가 현재 시각으로 설정한다.
+
+```text
+LocalDateTime.now()
+```
+
+외부 요청이 createdAt을 결정하게 하면 과거 시각, 미래 시각 또는 null을 전달할 수 있어 시스템 기록을 신뢰하기 어려워진다.
+
+따라서 현재 생성 규칙은 다음과 같다.
+
+```text
+외부가 제공하는 값
+→ 제조사, 시간당 요금, 일일 요금, 차량번호, 모델명, 대여 유형, 연료 종류
+
+서버가 자동으로 결정하는 값
+→ status = AVAILABLE
+→ createdAt = 현재 서버 시각
+```
+
+`createdAt` 컬럼에는 다음 제약을 적용했다.
+
+```text
+nullable = false
+updatable = false
+```
+
+`nullable = false`는 등록 시각 없이 저장되는 것을 막고, `updatable = false`는 Vehicle이 수정될 때 최초 등록 시각이 함께 변경되지 않도록 한다.
+
+## 5. EnumType.STRING을 사용한 이유
+
+`rentalType`, `fuelType`, `status`에는 다음 설정이 적용되어 있다.
+
+```text
+@Enumerated(EnumType.STRING)
+```
+
+JPA enum 저장 방식에는 대표적으로 `ORDINAL`과 `STRING`이 있다.
+
+`ORDINAL`은 enum의 선언 순서를 숫자로 저장한다.
+
+```text
+AVAILABLE = 0
+RESERVED = 1
+IN_USE = 2
+```
+
+이 방식은 enum 순서를 바꾸거나 중간에 값을 추가하면 기존 숫자의 의미가 달라질 수 있다.
+
+반면 `STRING`은 enum 이름을 DB에 그대로 저장한다.
+
+```text
+AVAILABLE
+RESERVED
+IN_USE
+```
+
+장점은 다음과 같다.
+
+- DB를 직접 확인할 때 의미를 바로 이해할 수 있다.
+- enum 선언 순서를 바꿔도 기존 데이터의 의미가 유지된다.
+- 잘못된 데이터나 상태를 찾기 쉽다.
+- 운영과 디버깅 과정에서 숫자와 enum 순서를 대조할 필요가 없다.
+
+문자열이 숫자보다 조금 더 많은 저장 공간을 사용하지만, 이 프로젝트에서는 데이터 안정성과 가독성이 더 중요하므로 `EnumType.STRING`을 사용한다.
+
+## 6. 생성자와 JPA 기본 생성자의 역할
+
+Vehicle에는 두 종류의 생성자가 있다.
+
+첫 번째는 Lombok이 만드는 기본 생성자다.
+
+```text
+@NoArgsConstructor
+```
+
+JPA는 DB 조회 결과로 객체를 복원할 때 매개변수가 없는 생성자가 필요하다.
+
+두 번째는 애플리케이션이 새로운 차량을 만들 때 사용하는 생성자다.
+
+이 생성자는 외부에서 결정해야 하는 차량 기본 정보만 받는다.
+
+```text
+manufacturer
+hourlyRate
+dailyRate
+vehicleNumber
+modelName
+rentalType
+fuelType
+```
+
+그리고 객체가 정상 상태로 시작하도록 서버 값 두 개를 내부에서 자동 설정한다.
+
+```text
+status = AVAILABLE
+createdAt = 현재 서버 시각
+```
+
+따라서 새 Vehicle 객체는 만들어지는 순간부터 status와 createdAt이 null이 아닌 완전한 상태를 가진다.
+
+## 7. VehicleRepository의 역할
+
+`VehicleRepository`는 Vehicle 객체와 DB 사이의 데이터 접근을 담당한다.
+
+현재 다음 인터페이스를 상속한다.
+
+```text
+JpaRepository<Vehicle, Long>
+```
+
+첫 번째 타입인 `Vehicle`은 이 Repository가 관리하는 엔티티를 뜻한다.
+
+두 번째 타입인 `Long`은 Vehicle의 ID 타입을 뜻한다.
+
+JpaRepository를 상속하면 다음과 같은 기본 기능을 직접 SQL로 작성하지 않아도 사용할 수 있다.
+
+- 차량 저장
+- ID로 차량 조회
+- 전체 차량 조회
+- 차량 수정 내용 반영
+- 차량 삭제
+- 차량 개수 확인
+
+현재 차량번호 중복 검사를 위한 메서드도 추가했다.
+
+```text
+existsByVehicleNumber(String vehicleNumber)
+```
+
+Spring Data JPA는 메서드 이름을 분석해서 다음 의미의 조회를 자동으로 만든다.
+
+```text
+해당 vehicleNumber를 가진 Vehicle이 존재하는가?
+```
+
+반환값은 boolean이다.
+
+```text
+존재함   → true
+존재하지 않음 → false
+```
+
+아직 Service를 만들지 않았기 때문에 현재는 이 메서드를 호출하는 코드가 없다. 나중에 차량 등록 로직에서 중복 차량번호를 미리 검사할 때 사용한다.
+
+## 8. 현재 Vehicle 도메인에서 완료한 파일
+
+현재 작성한 파일은 다음과 같다.
+
+```text
+vehicle/entity/Vehicle.java
+vehicle/entity/RentalType.java
+vehicle/entity/FuelType.java
+vehicle/entity/VehicleStatus.java
+vehicle/repository/VehicleRepository.java
+```
+
+완료한 내용:
+
+- Vehicle을 JPA Entity로 선언
+- `vehicles` 테이블 이름 지정
+- ID 자동 생성 설정
+- 필수 필드에 null 금지 제약 설정
+- 차량번호 unique 제약 설정
+- 대여 유형 enum 작성
+- 연료 유형 enum 작성
+- 차량 상태 enum 작성
+- 모든 enum 필드를 문자열로 저장하도록 설정
+- 새 차량 상태를 AVAILABLE로 자동 설정
+- 등록 시각을 서버 현재 시각으로 자동 설정
+- 등록 시각이 수정되지 않도록 설정
+- JpaRepository 기반 VehicleRepository 작성
+- 차량번호 존재 여부 확인 메서드 작성
+
+## 9. 현재 단계에서 알아둘 점
+
+### DB 제약과 입력 검증은 같은 것이 아니다
+
+`nullable = false`와 `unique = true`는 DB 데이터를 보호하는 제약이다.
+
+하지만 다음과 같은 값까지 자동으로 검증하지는 않는다.
+
+```text
+빈 문자열 ""
+공백만 있는 제조사 "   "
+음수 요금 -1000
+잘못된 차량번호 형식
+```
+
+이런 입력 검증은 나중에 차량 등록 요청 DTO를 만들 때 `@NotBlank`, 숫자 범위 검증 등을 사용해 추가한다.
+
+### 상태 변경은 필드 Setter로 아무렇게나 처리하지 않는다
+
+현재 Vehicle에는 `@Getter`만 있고 전체 필드의 Setter는 없다.
+
+이 방향은 적절하다. 모든 필드의 Setter를 열어 두면 어느 코드에서든 차량 상태를 임의로 바꿀 수 있기 때문이다.
+
+나중에 상태 변경이 필요해지면 다음과 같이 의미가 드러나는 동작을 검토한다.
+
+```text
+예약됨으로 변경
+대여 시작
+반납 완료
+정비 시작
+운영 중지
+```
+
+구체적인 메서드와 상태 전환 규칙은 예약 기능을 설계할 때 결정한다.
+
+### Entity가 API 요청 객체를 대신하지 않는다
+
+나중에 차량 등록 API를 만들더라도 HTTP 요청 JSON을 Vehicle Entity로 직접 받기보다는 별도의 등록 요청 DTO를 사용하는 방향이 좋다.
+
+이유는 다음과 같다.
+
+- 외부가 `id`, `status`, `createdAt`을 임의로 전달하지 못하게 할 수 있다.
+- 입력 검증 규칙을 DTO에 명확하게 표현할 수 있다.
+- DB 구조와 API 요청 구조가 강하게 묶이는 것을 줄일 수 있다.
+
+이 내용은 다음 단계에서 DTO를 만들 때 다시 학습한다.
+
+## 10. 아직 구현하지 않은 기능
+
+의도적으로 다음 기능은 아직 만들지 않았다.
+
+- `VehicleService`
+- `VehicleController`
+- 차량 등록 API
+- 차량 목록 및 상세 조회 API
+- 차량 정보 수정 API
+- 차량 상태 변경 API
+- 예약 Entity와 Repository
+- 예약 가능 시간 검사
+- 예약 시간 중복 방지
+- 차량 이미지 업로드
+- 관리자 권한 검사
+- 요금 계산 로직
+
+Vehicle Entity와 Repository를 작성했다고 해서 사용자가 HTTP 요청으로 차량을 등록할 수 있는 것은 아니다.
+
+현재는 데이터를 저장할 기반만 준비된 상태다.
+
+## 11. 다음 단계 추천
+
+다음 작업은 한꺼번에 Controller까지 만들기보다 차량 등록 기능을 작은 단계로 나누어 진행한다.
+
+추천 순서는 다음과 같다.
+
+```text
+1. 현재 Vehicle Entity와 Repository 컴파일 확인
+2. Vehicle 생성과 저장에 대한 간단한 Repository 테스트 검토
+3. 차량 등록 요청 DTO 설계
+4. 차량번호 중복 예외 설계
+5. VehicleService의 등록 기능 작성
+6. Service 테스트 작성
+7. VehicleController와 등록 API 작성
+8. Postman으로 등록 동작 확인
+```
+
+다음 단계에서도 사용자가 먼저 코드를 작성하고 Codex는 전체 코드를 교체하지 않는다.
+
+리뷰할 때는 다음 순서를 지킨다.
+
+```text
+문제가 있는 파일과 위치
+→ 왜 문제인지
+→ 어떤 방향으로 수정할지
+→ 사용자가 직접 수정
+→ 수정 결과 재검토
+```
+
+## 현재 바로 다음 한 가지 목표
+
+현재 Vehicle Entity, enum, Repository의 1차 작성은 완료된 상태다.
+
+다음 한 가지 목표는 차량 등록 API를 바로 만드는 것이 아니라, 먼저 현재 코드가 컴파일되고 Vehicle이 의도대로 저장되는지 확인하는 것이다.
+
+그 다음에 차량 등록 요청 DTO부터 시작한다.
