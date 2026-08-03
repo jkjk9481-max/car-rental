@@ -2238,3 +2238,498 @@ Vehicle Entity와 Repository를 작성했다고 해서 사용자가 HTTP 요청�
 다음 한 가지 목표는 차량 등록 API를 바로 만드는 것이 아니라, 먼저 현재 코드가 컴파일되고 Vehicle이 의도대로 저장되는지 확인하는 것이다.
 
 그 다음에 차량 등록 요청 DTO부터 시작한다.
+ 
+---
+
+# 최신 학습 정리: Vehicle 차량 등록 API 준비
+
+## 1. 현재 단계의 목표와 범위
+
+현재 인증 기능과 `Vehicle` Entity/Repository의 1차 설계를 마쳤고, 차량 등록 API를 직접 구현하는 단계이다.
+
+현재 작업하거나 앞으로 작성할 파일:
+
+- `VehicleCreateRequest`: 차량 등록 요청 JSON을 받는 DTO
+- `VehicleService`: 차량번호 중복 검사, Vehicle 생성, 저장을 담당
+- `VehicleController`: HTTP 차량 등록 요청을 받고 Service를 호출
+- `DuplicateVehicleNumberException`: 차량번호 중복 상황을 나타내는 전용 예외
+- `VehicleRepository`: `existsByVehicleNumber(String vehicleNumber)` 추가
+- `GlobalExceptionHandler`: 중복 예외를 HTTP 409 Conflict로 변환
+
+현재 구현하지 않는 기능:
+
+- 차량 목록 및 상세 조회
+- 차량 수정 및 삭제
+- 예약 기능
+- 이미지 업로드
+- 관리자 권한 제한
+
+현재 범위를 넘겨 한꺼번에 구현하지 않는다.
+
+## 2. 차량 등록 요청의 전체 흐름
+
+차량 등록은 다음 순서로 진행된다.
+
+```text
+Postman에서 JSON과 JWT 전송
+→ Controller가 VehicleCreateRequest로 요청을 받음
+→ Controller가 VehicleService의 등록 메서드를 호출
+→ Service가 차량번호 중복 여부를 확인
+→ 중복이면 DuplicateVehicleNumberException 발생
+→ 중복이 아니면 Request의 값으로 Vehicle 객체 생성
+→ VehicleRepository.save(vehicle) 호출
+→ vehicles 테이블에 저장
+```
+
+계층별 책임은 다음과 같다.
+
+```text
+Controller: HTTP 요청과 응답 처리
+Service: 차량 등록 절차와 업무 규칙 처리
+Repository: DB 조회와 저장
+Entity: DB에 저장될 차량 데이터와 차량 생성 규칙 표현
+Request DTO: 외부에서 받은 입력값 운반
+Exception Handler: Java 예외를 적절한 HTTP 응답으로 변환
+```
+
+## 3. VehicleCreateRequest가 필요한 이유
+
+`VehicleCreateRequest`는 Postman 등 클라이언트가 보낸 차량 등록 JSON을 Spring이 담는 입력용 객체이다.
+
+쉽게 말하면 차량 등록 신청서이다.
+
+```text
+클라이언트 JSON → VehicleCreateRequest 객체
+```
+
+현재 Request가 받는 값:
+
+- `manufacturer`
+- `modelName`
+- `vehicleNumber`
+- `rentalType`
+- `fuelType`
+- `hourlyRate`
+- `dailyRate`
+
+Request에서 받지 않는 값:
+
+- `id`: DB가 저장할 때 생성
+- `status`: 서버가 새 차량의 초기 상태를 `AVAILABLE`로 결정
+- `createdAt`: 서버가 현재 시각으로 결정
+
+Entity를 요청 객체로 직접 사용하지 않고 DTO를 분리하면 사용자가 `status`, `createdAt`, `id`처럼 서버가 관리해야 하는 값을 임의로 보내는 것을 막을 수 있다. 또한 등록 API에 필요한 검증 규칙만 DTO에 명확하게 작성할 수 있다.
+
+## 4. Request와 Response의 차이
+
+둘 다 계층 사이에서 데이터를 전달하는 DTO이지만 데이터 이동 방향이 다르다.
+
+```text
+클라이언트 → 서버: Request
+서버 → 클라이언트: Response
+```
+
+### Request
+
+사용자가 서버에 보내는 입력값을 담는다.
+
+예시:
+
+- `LoginRequest`: 로그인 이메일과 비밀번호를 받음
+- `VehicleCreateRequest`: 등록할 차량 정보를 받음
+
+Request에는 서버가 결정해야 하는 값이나 사용자가 수정해서는 안 되는 값을 넣지 않는다.
+
+### Response
+
+서버가 처리 결과를 사용자에게 돌려줄 때 사용한다.
+
+예시:
+
+- `LoginResponse`: 서버가 생성한 access token을 반환
+- 나중의 `VehicleResponse`: 차량 ID, 제조사, 모델명, 상태 등 필요한 차량 정보를 반환할 수 있음
+
+Response에도 비밀번호나 내부 보안 정보처럼 외부에 공개하면 안 되는 값은 넣지 않는다.
+
+현재 차량 등록 성공 시 응답 본문 없이 상태 코드만 반환한다면 `VehicleResponse`를 아직 만들지 않아도 된다.
+
+## 5. VehicleCreateRequest의 검증 어노테이션
+
+현재 문자열 필드는 `@NotBlank`를 사용한다.
+
+```text
+null 거부
+빈 문자열 "" 거부
+공백뿐인 문자열 "   " 거부
+```
+
+따라서 제조사, 모델명, 차량번호와 같은 필수 문자열에 알맞다.
+
+enum 필드는 `@NotNull`을 사용한다. `rentalType`과 `fuelType`이 요청에서 빠지는 것을 막기 위한 것이다.
+
+요금에는 현재 `@Positive`를 사용한다.
+
+```text
+1 이상의 요금: 허용
+0: 거부
+음수: 거부
+```
+
+무료 요금 0원을 정책상 허용한다면 `@PositiveOrZero`를 사용한다. 반드시 1원 이상이어야 한다면 현재 `@Positive`가 맞다.
+
+현재 `PositiveOrZero`는 import만 하고 실제로 사용하지 않으므로, `@Positive` 정책을 유지한다면 불필요한 import는 제거할 수 있다.
+
+### int와 Integer의 차이
+
+현재 요청 DTO의 요금 타입은 `int`이다. `int`는 null을 가질 수 없으며 요청에 요금 필드가 없으면 기본값 0이 들어올 수 있다. 현재 `@Positive`가 0을 거부하기 때문에 누락 요청도 검증 실패한다.
+
+`Integer`를 사용하고 `@NotNull`, `@Positive`를 함께 적용하면 다음 두 상황을 더 명확하게 표현할 수 있다.
+
+```text
+값 누락 또는 null → @NotNull 위반
+0 또는 음수 → @Positive 위반
+```
+
+Entity는 `int`, Request DTO는 `Integer`로 서로 다르게 사용할 수도 있다. DTO와 Entity는 역할이 다른 별도 클래스이기 때문이다.
+
+## 6. Request를 Vehicle로 변환하는 이유
+
+핵심은 다음 문장이다.
+
+> VehicleRepository는 Vehicle만 저장할 수 있으므로 Request에서 값을 꺼내 유효한 Vehicle 객체를 생성하고, 그 Vehicle을 저장한다.
+
+`VehicleRepository`의 선언은 다음 의미이다.
+
+```text
+JpaRepository<Vehicle, Long>
+저장하고 관리하는 객체 타입: Vehicle
+Vehicle의 ID 타입: Long
+```
+
+따라서 다음 관계가 성립한다.
+
+```text
+vehicleRepository.save(vehicle) → 가능
+vehicleRepository.save(request) → 불가능
+```
+
+`VehicleCreateRequest`는 `@Entity`가 아니며 DB의 `vehicles` 테이블과 연결되지 않는다. 따라서 JPA가 Request 객체를 직접 저장할 수 없다.
+
+Request의 값을 Vehicle에 “통째로 붙이는 것”은 아니다. 서로 다른 두 객체 사이에서 필요한 값만 전달하여 새로운 Vehicle을 만드는 것이다.
+
+```text
+request.getManufacturer()  값 → Vehicle.manufacturer
+request.getModelName()     값 → Vehicle.modelName
+request.getVehicleNumber() 값 → Vehicle.vehicleNumber
+request.getRentalType()    값 → Vehicle.rentalType
+request.getFuelType()      값 → Vehicle.fuelType
+request.getHourlyRate()    값 → Vehicle.hourlyRate
+request.getDailyRate()     값 → Vehicle.dailyRate
+```
+
+객체 관계는 다음과 같다.
+
+```text
+VehicleCreateRequest 객체 ≠ Vehicle 객체
+```
+
+Request를 재료로 새로운 Vehicle 객체를 생성한 것이다.
+
+비유하면 다음과 같다.
+
+```text
+VehicleCreateRequest = 차량 등록 신청서
+Vehicle = 신청서의 값을 확인하고 서버 규칙까지 적용한 실제 차량 등록 기록
+```
+
+Request 객체는 요청 처리가 끝나면 더 이상 필요하지 않지만 Vehicle은 Repository를 통해 DB에 저장된다.
+
+## 7. Vehicle을 생성할 때 값이 결정되는 위치
+
+사용자가 제공하는 값:
+
+- 제조사
+- 모델명
+- 차량번호
+- 대여 유형
+- 연료 유형
+- 시간 요금
+- 일일 요금
+
+서버의 Vehicle 생성자가 정하는 값:
+
+- `status = VehicleStatus.AVAILABLE`
+- `createdAt = LocalDateTime.now()`
+
+DB가 정하는 값:
+
+- `id`
+
+따라서 Service에서는 빈 객체인 `new Vehicle()`을 만드는 것이 아니라, Request에서 꺼낸 필수값을 Vehicle의 등록용 생성자에 전달해야 한다. 그러면 Vehicle 생성자 내부에서 상태와 생성 시각까지 설정되어 처음부터 유효한 차량 객체가 만들어진다.
+
+## 8. VehicleService가 등록 로직을 담당하는 이유
+
+차량 등록은 단순한 DB 저장 한 줄이 아니다.
+
+```text
+차량번호 중복 확인
+→ 등록 가능 여부 판단
+→ Vehicle 생성
+→ Vehicle 저장
+```
+
+이는 차량 등록에 관한 업무 흐름이므로 Service의 책임이다.
+
+Controller가 Repository를 직접 사용하면 Controller 안에 다음 역할이 모두 섞인다.
+
+- HTTP JSON 처리
+- 중복 검사
+- 업무 판단
+- Vehicle 생성
+- DB 저장
+- HTTP 응답 생성
+
+이렇게 되면 Controller가 커지고 같은 등록 규칙을 다른 곳에서 재사용하기 어려워진다. 따라서 흐름을 다음과 같이 분리한다.
+
+```text
+Controller → Service → Repository
+```
+
+## 9. Service 메서드의 반환 타입과 매개변수 타입
+
+Java 메서드의 기본 형태는 다음과 같다.
+
+```text
+접근제어자 반환타입 메서드이름(매개변수타입 매개변수이름)
+```
+
+차량 등록 결과를 현재 따로 반환하지 않는다면 개념적인 형태는 다음과 같다.
+
+```text
+public void 차량등록메서드(VehicleCreateRequest request)
+```
+
+각 부분의 의미:
+
+- `void`: Service가 호출자에게 반환하는 값이 없음
+- 차량등록메서드: 메서드의 실제 역할은 차량 등록
+- `VehicleCreateRequest request`: 차량 등록에 필요한 입력 전체를 전달받음
+
+중요한 점은 `VehicleCreateRequest`가 반환 타입이 아니라 매개변수 타입이라는 것이다.
+
+```text
+반환 타입: void
+매개변수 타입: VehicleCreateRequest
+중복 조회 결과 타입: boolean
+생성되는 객체 타입: Vehicle
+Repository 중복 검사에 넘기는 타입: String
+```
+
+## 10. Repository와 Service의 existsByVehicleNumber 차이
+
+Repository에는 다음 메서드가 있는 것이 자연스럽다.
+
+```text
+boolean existsByVehicleNumber(String vehicleNumber)
+```
+
+이 메서드는 DB에 해당 차량번호가 존재하는지만 답한다.
+
+```text
+존재함 → true
+존재하지 않음 → false
+```
+
+Service는 Request에서 문자열 차량번호를 꺼내 Repository에 전달한다.
+
+```text
+request                         → VehicleCreateRequest
+request.getVehicleNumber()      → String
+Repository 조회 결과           → boolean
+```
+
+Service의 메서드는 중복 여부만 반환하는 것이 아니라 Vehicle을 생성하고 저장하는 전체 등록 작업을 수행한다. 따라서 Service 메서드 이름도 `existsByVehicleNumber`보다는 차량 등록이라는 전체 역할이 드러나는 이름이 더 알맞다.
+
+현재 Service가 하는 실제 작업:
+
+```text
+VehicleCreateRequest 받기
+→ request.getVehicleNumber()로 중복 확인
+→ 중복이면 예외 발생
+→ Request 값으로 Vehicle 생성
+→ Vehicle 저장
+```
+
+Repository 메서드와 Service 등록 메서드의 이름을 똑같이 만들 필요가 없다. Repository는 DB 질문을 나타내고, Service는 업무 동작을 나타낸다.
+
+## 11. 차량번호 중복 검사를 저장 전에 하는 이유
+
+같은 차량번호가 이미 존재하면 새로운 차량을 등록하면 안 된다. Service에서 먼저 검사하면 “현재 차량번호와 충돌한다”는 업무 상황을 명확한 예외로 표현할 수 있다.
+
+```text
+exists == true
+→ 등록 중단
+→ DuplicateVehicleNumberException 발생
+
+exists == false
+→ Vehicle 생성
+→ 저장 진행
+```
+
+다만 Service의 사전 검사만으로 동시에 들어온 요청을 완전히 막을 수는 없다. 두 요청이 거의 동시에 검사하면 둘 다 아직 존재하지 않는다고 판단할 가능성이 있기 때문이다.
+
+따라서 두 장치를 함께 사용한다.
+
+```text
+Service의 exists 검사
+→ 저장 전에 친절하고 명확한 중복 오류를 주기 위한 장치
+
+DB의 unique 제약
+→ 동시 요청까지 포함해 중복 저장을 최종 차단하는 장치
+```
+
+## 12. DuplicateVehicleNumberException이 필요한 이유
+
+현재 임시로 일반 `RuntimeException`을 던질 수 있지만 최종적으로는 전용 예외가 필요하다.
+
+```text
+RuntimeException
+→ 어떤 업무 문제인지 이름만으로 알기 어려움
+
+DuplicateVehicleNumberException
+→ 차량번호 중복이라는 원인이 명확함
+```
+
+전용 예외가 있으면 `GlobalExceptionHandler`가 차량번호 중복만 정확하게 구별하여 409 응답으로 바꿀 수 있다. 예상하지 못한 서버 오류와 정상적으로 예상되는 중복 오류를 구분하는 데에도 중요하다.
+
+## 13. GlobalExceptionHandler에서 409 Conflict를 사용하는 이유
+
+차량번호 중복 요청은 JSON 문법이 틀린 것이 아니다. 필수값이 빠진 것도 아닐 수 있다. 요청 자체는 정상적이지만 이미 DB에 존재하는 차량번호와 충돌한 것이다.
+
+```text
+400 Bad Request
+→ 값 누락, 형식 오류, 검증 실패 등 요청값 자체가 잘못됨
+
+401 Unauthorized
+→ 인증 토큰이 없거나 유효하지 않음
+
+409 Conflict
+→ 요청은 이해했지만 현재 서버 데이터와 충돌함
+```
+
+따라서 `DuplicateVehicleNumberException`은 `GlobalExceptionHandler`에서 HTTP 409 Conflict로 변환하는 것이 자연스럽다.
+
+Service는 HTTP 상태 코드를 직접 다루지 않고 “중복 차량번호다”라는 업무 예외만 발생시킨다. HTTP 응답으로 바꾸는 책임은 예외 처리 계층이 담당한다.
+
+## 14. 현재 작성된 VehicleService 상태
+
+현재 잘 구현한 부분:
+
+- `VehicleRepository`를 생성자 주입으로 받음
+- `VehicleCreateRequest`를 Service 매개변수로 받음
+- Request에서 차량번호를 꺼내 Repository 중복 검사를 호출함
+- 중복일 때 등록 흐름을 중단하도록 예외를 발생시킴
+- 빈 Vehicle이 아니라 Request의 필수값으로 Vehicle을 생성함
+- 생성한 Vehicle을 `vehicleRepository.save(vehicle)`로 저장함
+
+앞으로 수정하거나 확인할 부분:
+
+1. Service 메서드 이름
+   - 현재 이름은 `existsByVehicleNumber`이지만 실제 역할은 중복 확인만이 아니라 차량 생성과 저장까지 포함한 차량 등록이다.
+   - 따라서 실제 역할이 드러나는 등록 의미의 이름을 고려한다.
+
+2. 예외 타입
+   - 현재는 `RuntimeException`을 사용하고 있다.
+   - `DuplicateVehicleNumberException`을 만든 후 그 전용 예외로 교체한다.
+
+3. 트랜잭션
+   - 등록 작업의 DB 처리 단위를 명확히 하기 위해 Service 등록 메서드의 `@Transactional` 적용 여부를 이후 확인한다.
+
+4. 코드 형식
+   - Vehicle 생성자 인자가 한 줄에 길게 이어져 있어 순서를 잘못 넣기 쉽다.
+   - 코드를 직접 작성할 때 인자를 줄별로 정리하면 어떤 Request 값이 어디로 전달되는지 확인하기 쉽다.
+
+## 15. Controller를 작성할 때 기억할 점
+
+Controller의 핵심 역할은 다음 정도이다.
+
+```text
+차량 등록 HTTP 요청 받기
+→ @Valid로 VehicleCreateRequest 검증
+→ VehicleService의 등록 메서드 호출
+→ 적절한 HTTP 성공 응답 반환
+```
+
+Controller에서는 다음 작업을 직접 하지 않는다.
+
+- `VehicleRepository` 직접 호출
+- 차량번호 중복 업무 판단
+- `new Vehicle(...)`로 Entity 생성
+- DB 저장 절차 작성
+
+이 작업은 이미 Service의 책임이기 때문이다.
+
+새 리소스인 차량이 정상적으로 생성되었다면 성공 상태로 `201 Created`를 고려할 수 있다.
+
+## 16. Postman에서 확인할 결과
+
+차량 등록 API가 인증 대상이라는 전제이다.
+
+### 토큰 없이 요청
+
+```text
+HTTP 401 Unauthorized
+```
+
+인증 필터 단계에서 막혀 Controller와 Service까지 요청이 도달하지 않아야 하며 차량도 저장되지 않아야 한다.
+
+### 잘못되거나 만료된 토큰
+
+```text
+HTTP 401 Unauthorized
+```
+
+### 유효한 토큰 + 정상 데이터 + 새로운 차량번호
+
+```text
+HTTP 201 Created 등 설계한 성공 상태
+DB에 Vehicle 저장
+```
+
+### 유효한 토큰 + 이미 존재하는 차량번호
+
+```text
+Service에서 DuplicateVehicleNumberException 발생
+GlobalExceptionHandler가 HTTP 409 Conflict로 변환
+새 Vehicle은 저장되지 않음
+```
+
+### 유효한 토큰 + 잘못된 요청값
+
+예를 들어 제조사가 공백이거나 요금이 음수라면 DTO 검증에 실패해야 한다.
+
+```text
+HTTP 400 Bad Request
+Service 등록 로직을 정상 진행하지 않음
+```
+
+현재 관리자 권한 제한은 범위에 없으므로 유효한 인증 토큰을 가진 일반 사용자도 차량 등록이 가능한 상태가 자연스럽다. 관리자 제한을 나중에 구현하면 일반 사용자는 `403 Forbidden`을 받도록 변경할 수 있다.
+
+## 17. 다음 작업 순서
+
+현재 진행 상태를 기준으로 다음 순서가 자연스럽다.
+
+```text
+1. VehicleService 메서드 이름을 실제 등록 역할에 맞게 확인
+2. DuplicateVehicleNumberException 작성
+3. Service에서 RuntimeException 대신 전용 예외 사용
+4. GlobalExceptionHandler에 중복 예외의 409 처리 추가
+5. VehicleController 작성
+6. Controller에서 @Valid 요청 검증과 Service 호출 연결
+7. 컴파일 또는 테스트 실행
+8. Postman에서 토큰 없음, 정상 토큰, 중복 번호, 잘못된 입력 테스트
+```
+
+## 18. 이번 단계의 핵심 한 문장
+
+> VehicleCreateRequest는 외부 입력을 받는 신청서이고, Service는 그 신청서의 값을 검증한 뒤 서버 규칙이 적용된 Vehicle을 생성하며, VehicleRepository는 오직 그 Vehicle을 DB에 저장한다.

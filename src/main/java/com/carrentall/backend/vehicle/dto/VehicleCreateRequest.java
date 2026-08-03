@@ -31,12 +31,14 @@ public class VehicleCreateRequest {
     @NotNull
     private FuelType fuelType;
 
+    @NotNull
     @Positive
     // 무료 요금이 포함된 정책이라면 @PositiveOrZero 이걸쓴다
-    private int hourlyRate;
+    private Integer hourlyRate;
 
+    @NotNull // 아예 안보내는걸 막음
     @Positive
-    private int dailyRate;
+    private Integer dailyRate;
 
 
 
