@@ -14,4 +14,11 @@ public class VehicleExceptionHandler {
         String message = exception.getMessage();
         return new ResponseEntity<>(message, status);
     }
+
+    @ExceptionHandler(VehicleNotFoundException.class)
+    public ResponseEntity<String> handleVehicleNotFoundException(VehicleNotFoundException exception) {
+        HttpStatus status = HttpStatus.NOT_FOUND;
+        String message = exception.getMessage();
+        return new ResponseEntity<>(message, status);
+    }
 }

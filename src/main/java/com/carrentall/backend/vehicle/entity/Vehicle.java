@@ -68,4 +68,10 @@ public class Vehicle {
         this.status = VehicleStatus.AVAILABLE;
         this.createdAt = LocalDateTime.now();
     }
+
+    // 차량 상태는 Vehicle이 가진 데이터이므로 상태를 실제로 변경하는 책임도 Vehicle에 두는 것이 자연스럽다
+    // 차량 자체의 상태 변경
+    public void changeStatus(VehicleStatus status) {
+        this.status = status;
+    }
 }

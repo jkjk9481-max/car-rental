@@ -2,10 +2,13 @@ package com.carrentall.backend.vehicle.service;
 
 import com.carrentall.backend.vehicle.dto.VehicleCreateRequest;
 import com.carrentall.backend.vehicle.dto.VehicleResponse;
+import com.carrentall.backend.vehicle.dto.VehicleStatusUpdateRequest;
 import com.carrentall.backend.vehicle.entity.Vehicle;
 import com.carrentall.backend.vehicle.exception.DuplicateVehicleNumberException;
+import com.carrentall.backend.vehicle.exception.VehicleNotFoundException;
 import com.carrentall.backend.vehicle.repository.VehicleRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -36,7 +39,7 @@ public class VehicleService {
     }
 
     // 목록 조회
-    public List<VehicleResponse> getAllVehicle(){
+    public List<VehicleResponse> getAllVehicles(){
         // 반환하는 타입이랑 알맞게 타입을 변환해줘야한다 ( 내가 설정한 타입이랑 같게 )
         List<VehicleResponse> vehicles = vehicleRepository.findAll()
                 .stream()
@@ -45,6 +48,31 @@ public class VehicleService {
                 .toList();
 
         return vehicles;
+        // DB 저장용 Vehicle 목록
+        // -> 사용자에게 보여줄 VehicleResponse 목록으로 바꿔서 반환
+    }
 
+    // 차량 단건 조회
+    public VehicleResponse getVehicleById(Long vehicleId){
+        // 1.findById()로 차량 조회
+        // 조회 결과를 그냥 호출하고 버리면 DTO로 변환할수 없다
+        Vehicle vehicle = vehicleRepository.findById(vehicleId)
+                .orElseThrow(() -> new VehicleNotFoundException("해당 차량이 존재하지 않습니다."));
+
+        // 있으면 VehicleResponse로 변환해 반환
+        VehicleResponse vehicleResponse = new VehicleResponse(vehicle.getId() , vehicle.getManufacturer() , vehicle.getModelName() , vehicle.getVehicleNumber() , vehicle.getRentalType() , vehicle.getFuelType() , vehicle.getStatus() , vehicle.getHourlyRate() , vehicle.getDailyRate());
+        return vehicleResponse;
+    }
+
+    @Transactional // 정상 종료되면 변경 내용이 DB에 반영 , 도중에 예외가 발생하면 일반적으로 변경 사항이 롤백된다
+    public VehicleResponse updateVehicle(Long vehicleId  , VehicleStatusUpdateRequest request) {
+        Vehicle vehicle = vehicleRepository.findById(vehicleId)
+                .orElseThrow(() -> new VehicleNotFoundException("해당 차량이 존재하지 않습니다."));
+
+        vehicle.changeStatus(request.getStatus());
+
+        VehicleResponse response = new VehicleResponse(vehicle.getId() , vehicle.getManufacturer() , vehicle.getModelName() , vehicle.getVehicleNumber() , vehicle.getRentalType() , vehicle.getFuelType() , vehicle.getStatus() , vehicle.getHourlyRate() , vehicle.getDailyRate());
+        return response;
+        // DB에서 해당 ID의 차량을 찾고, 없으면 오류를 발생시킨다. 있으면 차량 상태를 변경하고, 변경된 차량을 VehicleResponse로 변환해 반환한다.
     }
 }
