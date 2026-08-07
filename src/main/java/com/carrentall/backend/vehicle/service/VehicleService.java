@@ -3,6 +3,7 @@ package com.carrentall.backend.vehicle.service;
 import com.carrentall.backend.vehicle.dto.VehicleCreateRequest;
 import com.carrentall.backend.vehicle.dto.VehicleResponse;
 import com.carrentall.backend.vehicle.dto.VehicleStatusUpdateRequest;
+import com.carrentall.backend.vehicle.dto.VehicleUpdateRequest;
 import com.carrentall.backend.vehicle.entity.Vehicle;
 import com.carrentall.backend.vehicle.exception.DuplicateVehicleNumberException;
 import com.carrentall.backend.vehicle.exception.VehicleNotFoundException;
@@ -65,7 +66,7 @@ public class VehicleService {
     }
 
     @Transactional // 정상 종료되면 변경 내용이 DB에 반영 , 도중에 예외가 발생하면 일반적으로 변경 사항이 롤백된다
-    public VehicleResponse updateVehicle(Long vehicleId  , VehicleStatusUpdateRequest request) {
+    public VehicleResponse updateVehicleStatus(Long vehicleId  , VehicleStatusUpdateRequest request) {
         Vehicle vehicle = vehicleRepository.findById(vehicleId)
                 .orElseThrow(() -> new VehicleNotFoundException("해당 차량이 존재하지 않습니다."));
 
@@ -74,5 +75,47 @@ public class VehicleService {
         VehicleResponse response = new VehicleResponse(vehicle.getId() , vehicle.getManufacturer() , vehicle.getModelName() , vehicle.getVehicleNumber() , vehicle.getRentalType() , vehicle.getFuelType() , vehicle.getStatus() , vehicle.getHourlyRate() , vehicle.getDailyRate());
         return response;
         // DB에서 해당 ID의 차량을 찾고, 없으면 오류를 발생시킨다. 있으면 차량 상태를 변경하고, 변경된 차량을 VehicleResponse로 변환해 반환한다.
+    }
+
+    @Transactional
+    // 없는 차량이면 → VehicleNotFoundException
+    //  있는 차량이면 → 삭제 진행
+    public void deleteVehicle(Long vehicleId){
+        Vehicle vehicle = vehicleRepository.findById(vehicleId)
+                .orElseThrow(() -> new VehicleNotFoundException("해당 차량이 존재하지 않습니다."));
+
+        vehicleRepository.delete(vehicle);
+    }
+
+    @Transactional
+
+    //  1. findById(vehicleId)로 수정 대상 차량을 조회합니다.
+    //  2. 없으면 VehicleNotFoundException을 던집니다.
+    //  3. 요청한 차량번호를 사용하는 차량이 있는지 조회합니다.
+    //  4. 발견된 차량이 수정 대상과 다른 차량이면 DuplicateVehicleNumberException을 던집니다.
+    //  5. request의 값들을 vehicle.updateInfo()에 전달합니다.
+    //  6. @Transactional의 Dirty Checking으로 변경 내용이 DB에 반영됩니다.
+    //  7. 변경된 차량을 VehicleResponse로 반환합니다.
+    public VehicleResponse updateVehicle(Long vehicleId  , VehicleUpdateRequest request) {
+        Vehicle vehicle = vehicleRepository.findById(vehicleId)
+                .orElseThrow(() -> new VehicleNotFoundException("해당 차량이 존재하지 않습니다."));
+
+        vehicleRepository.findByVehicleNumber(request.getVehicleNumber())
+                .ifPresent(foundVehicle -> {
+                    // 조회된 차량 Id와 현재 수정하려는 차량 ID가 같은지 확인한다
+                    // 해당 차량번호로 발견한 차량의 ID가 현재 수정하려는 차량 ID와 같지 않다면    
+                    // foundVehicle은 차량번호로 DB에서 발견된 차량이고 , vehicleId는 지금 수정하려는 차량의 ID이다
+                    // 다른 차량이 이미 이 번호를 사용 중이라는뜻
+                    if(!foundVehicle.getId().equals(vehicleId)){
+                       throw new DuplicateVehicleNumberException("중복된 차량 번호입니다.");
+                    }
+                });
+
+        vehicle.updateInfo(request.getManufacturer(), request.getModelName(), request.getVehicleNumber(),
+                request.getRentalType(), request.getFuelType(), request.getHourlyRate(), request.getDailyRate());
+
+        return new VehicleResponse(vehicle.getId(), vehicle.getManufacturer(), vehicle.getModelName(),
+                vehicle.getVehicleNumber(), vehicle.getRentalType(), vehicle.getFuelType(),
+                vehicle.getStatus(), vehicle.getHourlyRate(), vehicle.getDailyRate());
     }
 }

@@ -74,4 +74,17 @@ public class Vehicle {
     public void changeStatus(VehicleStatus status) {
         this.status = status;
     }
+
+    // 차량 기본 정보를 수정한다
+    public void updateInfo(String manufacturer, String modelName, String vehicleNumber,
+                           RentalType rentalType, FuelType fuelType,
+                           int hourlyRate, int dailyRate) {
+        this.manufacturer = manufacturer;
+        this.modelName = modelName;
+        this.vehicleNumber = vehicleNumber;
+        this.rentalType = rentalType;
+        this.fuelType = fuelType;
+        this.hourlyRate = hourlyRate;
+        this.dailyRate = dailyRate;
+    }
 }

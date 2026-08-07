@@ -3,7 +3,6 @@ package com.carrentall.backend.vehicle.controller;
 import com.carrentall.backend.vehicle.dto.VehicleCreateRequest;
 import com.carrentall.backend.vehicle.dto.VehicleResponse;
 import com.carrentall.backend.vehicle.dto.VehicleStatusUpdateRequest;
-import com.carrentall.backend.vehicle.entity.VehicleStatus;
 import com.carrentall.backend.vehicle.service.VehicleService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
@@ -36,12 +35,27 @@ public class VehicleController {
         return vehicleService.getVehicleById(vehicleId);
     }
 
-    @PatchMapping("{vehicleId}/status")
+    @PatchMapping("/{vehicleId}/status")
     // vehicleId -> 어떤 차량을 변경할지 , VehicleStatusUpdateRequest -> 그 차량을 어떤 상태로 변경할지
-    // @PathVariable -> 쿼리 스트링이 아닌 URL 경로 일부를 변수로 사용하고 싶을 때
+    // @PathVariable -> URL 경로에 있는 vehicleId 값을 Java 변수로 받겠다
     // RESTFul 설계에서 리소스 식별자(id 등)를 표현하고자 할 때
     // URL은 변경할 대상을 지정하고, 요청 본문은 변경할 내용을 전달한다
     public VehicleResponse updateVehicleStatus(@PathVariable Long vehicleId, @RequestBody @Valid VehicleStatusUpdateRequest request) {
-        return vehicleService.updateVehicle(vehicleId , request);
+        return vehicleService.updateVehicleStatus(vehicleId , request);
     }
+
+    @DeleteMapping("/{vehicleId}")
+    //  DELETE /api/vehicles/{vehicleId} 요청이 오면
+    //  URL에 있는 vehicleId 값을 꺼내서
+    //  VehicleService.deleteVehicle(vehicleId)를 호출한다.
+    public void deleteVehicle(@PathVariable Long vehicleId) {
+        vehicleService.deleteVehicle(vehicleId);
+    }
+
+    //  PUT 요청 받기
+    //  → URL에서 vehicleId 받기
+    //  → 요청 본문을 VehicleUpdateRequest로 받기
+    //  → @Valid로 입력값 검증
+    //  → 서비스의 전체 수정 메서드 호출
+    //  → 변경된 VehicleResponse 반환
 }

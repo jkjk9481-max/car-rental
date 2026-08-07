@@ -3422,3 +3422,189 @@ HTTP 404 Not Found
 ## 29. 이번 단계의 핵심 한 문장
 
 > Controller가 URL의 vehicleId를 받아 Service에 전달하면, Service는 Repository의 findById()로 차량을 조회하고, 없으면 VehicleNotFoundException을 발생시켜 404로 처리하며, 있으면 Vehicle 엔티티를 VehicleResponse로 변환해 반환한다.
+# 2026-08-05 학습 기록: 차량 상태 변경 API
+
+## 1. 목표와 범위
+
+차량 등록, 목록 조회, 단건 조회 다음 단계로 차량의 운영 상태만 변경하는 API를 구현했다.
+
+```http
+PATCH /api/vehicles/{vehicleId}/status
+```
+
+```json
+{ "status": "MAINTENANCE" }
+```
+
+이 요청은 URL에 적힌 ID의 차량을 찾아 요청 본문의 상태로 변경한다는 뜻이다. 현재 상태는 `AVAILABLE`, `RESERVED`, `IN_USE`, `MAINTENANCE`, `UNAVAILABLE`이다. 이번에는 차량 전체 수정·삭제, 예약 기능, 관리자 권한 제한은 구현하지 않는다.
+
+## 2. 상태 변경 API가 필요한 이유
+
+차량은 등록 후에도 상태가 달라진다.
+
+```text
+AVAILABLE → RESERVED → IN_USE → AVAILABLE
+AVAILABLE → MAINTENANCE → AVAILABLE
+```
+
+상태는 이후 예약 가능 여부를 판단하는 중요한 정보다. 차량의 모든 정보를 다시 보내지 않고 상태만 바꾸는 전용 API가 필요하다. `PATCH`는 리소스 전체가 아니라 일부 필드만 변경할 때 사용하므로 이번 기능에 적합하다.
+
+## 3. VehicleStatusUpdateRequest DTO
+
+요청 JSON을 받기 위해 `VehicleStatusUpdateRequest` DTO를 만들었다. 이 DTO에는 `VehicleStatus status` 하나만 둔다. 요금은 이번 API의 변경 대상이 아니므로 넣지 않는다.
+
+DTO를 사용하는 이유:
+
+- 변경 가능한 필드를 상태 하나로 제한한다.
+- 요청 JSON을 Java 객체로 변환한다.
+- 요청값을 검증할 수 있다.
+- `Vehicle` 엔티티를 요청 객체로 직접 노출하지 않는다.
+- API 요청 형식과 DB 저장 객체의 역할을 분리한다.
+
+처음 이름인 `VehicleStatusUpdateReuqest`는 철자 오류였으므로 파일명과 클래스명을 `VehicleStatusUpdateRequest`로 고쳤다.
+
+## 4. @NotNull과 @Valid
+
+상태 변경에는 새 상태가 반드시 필요하다. `{}` 또는 `{ "status": null }`은 변경할 값이 없어 잘못된 요청이다.
+
+DTO의 `status`에 `@NotNull`을 붙이고 Controller의 DTO 파라미터에 `@Valid`를 붙이면 이런 요청을 Service 진입 전에 차단할 수 있다. 일반적으로 `400 Bad Request` 대상이다.
+
+`VehicleStatus`는 enum이므로 문자열 검증용 `@NotBlank`가 아니라 객체의 null 여부를 검사하는 `@NotNull`을 사용한다. `BROKEN`처럼 enum에 없는 문자열도 `VehicleStatus`로 변환할 수 없으므로 정상 요청이 아니다.
+
+## 5. Vehicle.changeStatus()를 만든 이유
+
+차량 상태는 `Vehicle`이 가진 데이터이므로 실제 변경 책임도 `Vehicle`에 둔다.
+
+```text
+setStatus(...)    → 단순 값 대입
+changeStatus(...) → 차량 상태를 변경한다는 업무 의미
+```
+
+setter 대신 의미가 드러나는 도메인 메서드를 사용하면 코드의 목적이 분명해진다. 현재는 단순 대입이지만 나중에는 정비 중 차량을 바로 대여 중으로 바꿀 수 없는 규칙 같은 상태 전이 규칙을 이 메서드 안에서 관리할 수 있다. 이번 단계에서는 복잡한 상태 전이 규칙은 구현하지 않는다.
+
+## 6. Service가 두 파라미터를 받는 이유
+
+```text
+vehicleId                  → 어떤 차량을 변경할지
+VehicleStatusUpdateRequest → 그 차량을 어떤 상태로 변경할지
+```
+
+URL이 `/api/vehicles/3/status`이고 본문 상태가 `MAINTENANCE`라면 3번 차량을 정비 중으로 변경한다는 뜻이다. ID만 있으면 새 상태를 모르고, DTO만 있으면 변경 대상을 모르므로 두 값이 모두 필요하다.
+
+## 7. VehicleService의 처리 흐름
+
+```text
+1. vehicleRepository.findById(vehicleId)로 차량 조회
+2. 없으면 VehicleNotFoundException 발생
+3. 있으면 vehicle.changeStatus(request.getStatus()) 호출
+4. 변경된 Vehicle을 VehicleResponse로 변환
+5. VehicleResponse 반환
+6. 트랜잭션 종료 시 DB에 변경 반영
+```
+
+`findById()`는 `Optional<Vehicle>`을 반환한다. `orElseThrow()`를 사용하면 차량이 존재할 때 `Vehicle`을 얻고, 없을 때 기존 `VehicleNotFoundException`을 던질 수 있다. 예외 처리기는 이를 `404 Not Found`로 변환한다.
+
+## 8. @Transactional이 필요한 이유
+
+상태 변경 메서드에는 `@Transactional`을 적용했다.
+
+```text
+차량 조회 → 상태 변경 → DB 반영
+```
+
+이 과정을 하나의 트랜잭션으로 묶는다. 정상 종료되면 커밋되고, 도중에 예외가 발생하면 일반적으로 변경이 롤백된다. 데이터 변경 업무를 담당하는 Service에 적용하는 것이 적절하다.
+
+## 9. JPA Dirty Checking
+
+Dirty Checking은 트랜잭션 안에서 조회한 엔티티가 변경됐는지 JPA가 확인하고 자동으로 `UPDATE` SQL을 실행하는 기능이다. 한국어로는 변경 감지라고 한다.
+
+```text
+Repository에서 Vehicle 조회
+→ Vehicle이 영속 상태가 됨
+→ changeStatus()로 status 변경
+→ 트랜잭션 종료 시 기존 값과 현재 값 비교
+→ 변경이 있으면 UPDATE SQL 실행
+```
+
+따라서 트랜잭션 안에서 조회한 엔티티를 변경했다면 `vehicleRepository.save(vehicle)`를 다시 호출하지 않아도 된다.
+
+```text
+changeStatus() + Dirty Checking → DB 상태 변경
+return VehicleResponse          → 변경 결과 전달
+```
+
+`return`이 DB 저장을 수행하는 것은 아니다. DB 반영과 응답 반환은 서로 다른 역할이다.
+
+## 10. void와 VehicleResponse 반환의 차이
+
+`void`는 상태만 변경하고 값을 돌려주지 않는다. 응답 본문이 없다면 `204 No Content`를 사용할 수 있지만, 변경 결과를 확인하려면 단건 조회 API를 다시 호출해야 한다.
+
+`VehicleResponse`를 반환하면 변경된 차량 정보를 Postman이나 프론트엔드에서 즉시 확인할 수 있다. 기존 응답 DTO와 변환 과정도 연습할 수 있어 이번에는 `VehicleResponse` 방식을 선택했다.
+
+```text
+Vehicle         → DB와 연결되어 실제 상태가 변경되는 엔티티
+VehicleResponse → 클라이언트에게 보여 줄 값을 담는 응답 DTO
+```
+
+## 11. Controller 연결 흐름
+
+Controller에 `@PatchMapping("{vehicleId}/status")` 메서드를 추가했다. 클래스 기본 경로 `/api/vehicles`와 합쳐져 최종 주소가 된다.
+
+```http
+PATCH /api/vehicles/{vehicleId}/status
+```
+
+```text
+PATCH 요청 수신
+→ @PathVariable로 vehicleId 추출
+→ @RequestBody로 JSON을 VehicleStatusUpdateRequest로 변환
+→ @Valid로 status 검증
+→ Service에 vehicleId와 request 전달
+→ Service의 VehicleResponse를 클라이언트에 반환
+```
+
+핵심은 "URL은 변경할 대상을 지정하고, 요청 본문은 변경할 내용을 전달한다"는 것이다.
+
+## 12. 전체 요청 흐름
+
+```text
+클라이언트: PATCH /api/vehicles/3/status
+             { "status": "MAINTENANCE" }
+        ↓
+VehicleController: ID와 DTO 수신, @Valid 검증
+        ↓
+VehicleService: findById(3), 없으면 VehicleNotFoundException
+        ↓
+Vehicle.changeStatus(MAINTENANCE)
+        ↓
+JPA Dirty Checking: 트랜잭션 종료 시 DB UPDATE
+        ↓
+VehicleResponse 반환
+```
+
+## 13. Postman에서 확인할 항목
+
+- 정상 요청: 응답의 ID와 상태가 요청 내용과 같은지 확인
+- 변경 후 단건 조회: DB에 변경 상태가 유지되는지 확인
+- 존재하지 않는 ID: `404 Not Found`
+- `status` 누락 또는 null: `400 Bad Request`
+- enum에 없는 상태: 요청 변환 실패
+- JWT 누락: 현재 보안 설정에 의해 요청 거부
+
+정상 요청 예시:
+
+```http
+PATCH /api/vehicles/1/status
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+```
+
+```json
+{ "status": "MAINTENANCE" }
+```
+
+## 14. 핵심 요약
+
+> 차량 상태 변경 API는 URL의 vehicleId로 차량을 찾고 요청 DTO의 status로 상태를 변경한다. 차량이 없으면 VehicleNotFoundException을 던진다. 차량이 있으면 changeStatus()를 호출하고, @Transactional 안에서 JPA Dirty Checking이 변경을 DB에 반영한다. 변경된 Vehicle은 VehicleResponse로 변환하여 Controller와 클라이언트에 반환한다.
+
+---
