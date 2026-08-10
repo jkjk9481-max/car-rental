@@ -431,6 +431,648 @@ toList()는 변환된 결과를 List<VehicleResponse>로 모은다.
 
 ---
 
+# 차량 상태별 조회와 복합 필터 검색
+
+## 1. 차량 상태별 조회 API
+
+구현한 API:
+
+```http
+GET /api/vehicles/status/{status}
+```
+
+예시:
+
+```http
+GET /api/vehicles/status/AVAILABLE
+```
+
+전체 차량을 조회한 뒤 Java에서 상태를 검사하는 것이 아니라, DB가 처음부터 요청한 상태와 일치하는 차량만 조회한다.
+
+```text
+Controller가 AVAILABLE을 받음
+→ Service에 VehicleStatus.AVAILABLE 전달
+→ Repository가 status 조건으로 DB 조회
+→ List<Vehicle> 반환
+→ Service가 List<VehicleResponse>로 변환
+→ JSON 배열 응답
+```
+
+Repository에는 다음 규칙의 메서드를 사용한다.
+
+```text
+findByStatus(VehicleStatus status)
+```
+
+Spring Data JPA는 `findBy` 뒤의 `Status`를 `Vehicle` 엔티티의 `status` 필드로 해석한다. 개념적으로는 `WHERE status = ?` 조건의 쿼리를 만든다. 검색 결과가 여러 대일 수 있고, 하나도 없을 수도 있으므로 반환 타입은 `List<Vehicle>`이다. 결과가 없으면 일반적으로 빈 목록이 반환된다.
+
+`VehicleResponse`가 상태를 조회하는 것은 아니다. 조회 책임은 Repository에 있고, `VehicleResponse`는 조회된 차량을 클라이언트에 보여 줄 응답 형식이다.
+
+## 2. AVAILABLE 조회가 예약 전에 필요한 이유
+
+예약 화면에서는 정비 중이거나 사용 중인 차량보다 현재 대여 가능한 차량을 먼저 보여 줘야 한다. 따라서 `AVAILABLE` 상태 조회는 이후 예약 기능의 출발점이 된다.
+
+```text
+AVAILABLE 차량 조회
+→ 사용자가 차량 선택
+→ 예약 요청
+→ 서버가 예약 가능 여부를 다시 검증
+→ 예약 생성
+```
+
+조회 시점에 `AVAILABLE`이었다고 예약 성공이 보장되는 것은 아니다. 조회 후 예약하기 전까지 다른 사용자가 먼저 예약할 수 있으므로, 예약 기능을 구현할 때 서버에서 다시 확인해야 한다.
+
+## 3. Vehicle을 VehicleResponse로 변환하는 이유
+
+Repository가 반환하는 타입은 DB와 연결된 엔티티 목록이다.
+
+```text
+List<Vehicle>
+```
+
+Service는 이를 외부 응답용 DTO 목록으로 바꾼다.
+
+```text
+List<Vehicle>
+→ stream()
+→ 각 Vehicle을 VehicleResponse로 변환
+→ List<VehicleResponse>
+```
+
+엔티티를 API에 그대로 노출하지 않고 필요한 필드만 안정적으로 응답하기 위한 분리이다.
+
+중복되던 변환 코드는 `VehicleService`의 `toResponse(Vehicle vehicle)`로 리팩토링했다.
+
+```text
+Vehicle 하나 → toResponse(vehicle) → VehicleResponse 하나
+```
+
+목록 변환에서는 다음 두 표현이 같은 의미이다.
+
+```text
+map(vehicle -> toResponse(vehicle))
+map(this::toResponse)
+```
+
+`toResponse()`가 `private`이어도 같은 `VehicleService` 클래스 내부에서는 사용할 수 있다.
+
+## 4. 복합 필터 검색 API
+
+구현한 API:
+
+```http
+GET /api/vehicles/search?status=AVAILABLE&fuelType=EV&rentalType=CAR_SHARING
+```
+
+이번 검색은 선택 조건 검색이 아니다. `status`, `fuelType`, `rentalType` 세 조건을 모두 필수로 받고, 세 조건이 전부 일치하는 차량만 조회한다.
+
+```text
+status = AVAILABLE
+AND fuelType = EV
+AND rentalType = CAR_SHARING
+```
+
+Repository 메서드 이름은 다음 의미를 가진다.
+
+```text
+findByStatusAndFuelTypeAndRentalType
+       │      │           │
+     status fuelType  rentalType 필드
+```
+
+Spring Data JPA는 `And`를 SQL의 AND 조건처럼 해석한다. 개념적인 쿼리는 다음과 같다.
+
+```sql
+SELECT *
+FROM vehicles
+WHERE status = 'AVAILABLE'
+  AND fuel_type = 'EV'
+  AND rental_type = 'CAR_SHARING';
+```
+
+Repository의 반환 타입은 `List<Vehicle>`이고, Service의 최종 반환 타입은 `List<VehicleResponse>`이다.
+
+```text
+Repository: 조건에 맞는 List<Vehicle> 조회
+→ Service: map(this::toResponse)로 변환
+→ Service: List<VehicleResponse> 반환
+→ Controller: 클라이언트에 JSON 배열 응답
+```
+
+## 5. @RequestParam
+
+`@RequestParam`은 URL에서 `?` 뒤에 붙는 쿼리 파라미터를 Controller 매개변수로 받는다.
+
+```text
+/search?status=AVAILABLE&fuelType=EV&rentalType=CAR_SHARING
+         │                    │
+         ? 뒤에서 시작하고 &로 각 조건을 연결
+```
+
+Spring은 요청 문자열을 매개변수의 enum 타입으로 자동 변환한다.
+
+```text
+"AVAILABLE"  → VehicleStatus.AVAILABLE
+"EV"         → FuelType.EV
+"CAR_SHARING" → RentalType.CAR_SHARING
+```
+
+enum 변환은 기본적으로 대소문자를 구분한다. enum에 존재하지 않는 값이나 소문자 값은 변환에 실패하여 일반적으로 `400 Bad Request`가 된다. 현재 세 `@RequestParam`은 모두 필수이므로 하나를 생략해도 일반적으로 400 응답이 발생한다.
+
+## 6. @PathVariable과 @RequestParam 차이
+
+```text
+@PathVariable → URL 경로 안의 대상이나 식별값
+@RequestParam → ? 뒤의 검색·필터·정렬·페이지 조건
+```
+
+예시:
+
+```text
+/api/vehicles/10
+              └─ 특정 차량 ID: @PathVariable
+
+/api/vehicles/search?fuelType=EV
+                     └─ 검색 조건: @RequestParam
+```
+
+상태별 조회에서는 상태를 경로로 표현했기 때문에 `@PathVariable VehicleStatus status`를 사용했다. 복합 검색에서는 여러 검색 조건을 전달하므로 각각 `@RequestParam`으로 받았다.
+
+## 7. Request와 Response의 방향
+
+메서드 선언에서 괄호 안과 괄호 앞은 방향이 다르다.
+
+```text
+매개변수            = 클라이언트 → 서버로 들어오는 값
+반환 타입           = 서버 → 클라이언트로 나가는 값
+```
+
+예를 들어 다음 의미의 메서드가 있다.
+
+```text
+List<VehicleResponse> searchVehicles(검색 조건들)
+```
+
+이는 검색 조건을 입력받아 차량 응답 DTO 여러 개를 반환한다는 뜻이다. `List<VehicleResponse>`가 Controller까지 반환되면 Spring이 이를 JSON 배열로 변환하여 Postman에 보여 준다.
+
+검색 조건을 나중에 `VehicleSearchRequest` 같은 Request DTO 하나로 묶더라도 응답 타입이 `List<VehicleResponse>`라면 Postman 응답 구조는 변하지 않는다.
+
+```text
+VehicleSearchRequest → 서버가 받을 검색 조건의 모양
+VehicleResponse      → 서버가 돌려줄 차량 정보의 모양
+```
+
+GET 검색에서는 일반적으로 JSON `@RequestBody`보다 쿼리 파라미터를 사용한다. 검색 조건 DTO를 도입하더라도 쿼리 파라미터를 그 DTO에 바인딩하는 방식을 사용할 수 있다.
+
+## 8. Postman 테스트
+
+현재 차량 API는 인증이 필요하므로 로그인으로 받은 JWT를 Bearer Token으로 넣는다.
+
+```http
+GET http://localhost:8080/api/vehicles/search?status=AVAILABLE&fuelType=EV&rentalType=CAR_SHARING
+Authorization: Bearer {accessToken}
+```
+
+확인할 항목:
+
+- 응답 상태가 `200 OK`인지
+- 응답이 JSON 배열인지
+- 모든 결과의 `status`가 `AVAILABLE`인지
+- 모든 결과의 `fuelType`이 `EV`인지
+- 모든 결과의 `rentalType`이 `CAR_SHARING`인지
+- 조건에 맞는 차량이 없다면 오류가 아니라 `[]`가 반환되는지
+- enum에 없는 값이나 필수 조건 누락 시 `400 Bad Request`가 발생하는지
+
+## 9. 이번 단계 핵심 요약
+
+> Repository는 DB에서 조건과 일치하는 `List<Vehicle>`을 조회한다. Service는 `toResponse()`를 사용해 이를 `List<VehicleResponse>`로 변환한다. Controller는 상태별 조회에서는 `@PathVariable`, 복합 필터 검색에서는 세 개의 `@RequestParam`을 받고 Service 결과를 반환한다. 매개변수는 서버로 들어오는 값이고 반환 타입은 Postman으로 나가는 응답이다.
+
+---
+
+# 2026-08-07 학습 기록: 차량 삭제 API
+
+## 1. 목표와 구현 범위
+
+차량 등록, 목록 조회, 단건 조회, 상태 변경 다음 단계로 차량을 삭제하는 API를 구현했다.
+
+```http
+DELETE /api/vehicles/{vehicleId}
+```
+
+이번 구현은 DB의 차량 행을 실제로 제거하는 하드 삭제 방식이다. 예약 이력 보존을 위한 소프트 삭제, 관리자 권한 제한, 예약 차량 삭제 제한 같은 업무 규칙은 아직 적용하지 않는다.
+
+## 2. 삭제 API가 필요한 이유
+
+차량이 잘못 등록됐거나 중복으로 등록된 경우, 또는 더 이상 관리할 필요가 없는 차량을 시스템에서 제거하기 위해 삭제 API가 필요하다.
+
+현재 학습 단계에서는 실제 삭제를 사용한다. 나중에 예약과 대여 이력이 생기면 차량을 완전히 지울 경우 과거 기록과 연결 관계가 깨질 수 있으므로 `deleted`, `deletedAt` 같은 값을 사용하는 소프트 삭제를 검토해야 한다.
+
+## 3. 별도 DTO를 만들지 않은 이유
+
+현재 삭제 요청에 필요한 입력은 차량 ID 하나뿐이다. ID는 요청 본문이 아니라 URL 경로에서 전달한다.
+
+```http
+DELETE /api/vehicles/3
+```
+
+여기서 `3`을 `@PathVariable Long vehicleId`로 받을 수 있으므로 요청 DTO가 필요하지 않다. 삭제 사유처럼 추가 입력을 요청 본문으로 받아야 한다면 그때 별도의 DTO를 고려한다.
+
+삭제 성공 시 반환할 정보도 없기 때문에 Service 메서드의 반환 타입은 `void`로 정했다. 삭제 전 차량 정보를 응답으로 보내는 설계도 가능하지만 현재 기능에는 필요하지 않다.
+
+## 4. VehicleService.deleteVehicle() 처리 흐름
+
+```text
+1. vehicleRepository.findById(vehicleId)로 차량 조회
+2. 없으면 VehicleNotFoundException 발생
+3. 있으면 조회된 Vehicle을 vehicle 변수에 저장
+4. vehicleRepository.delete(vehicle) 호출
+5. 트랜잭션이 정상 종료되면 DB에서 삭제
+```
+
+삭제 전에 먼저 조회하는 이유는 차량이 실제로 존재하는지 확인하고, 없는 차량에 대해 잘못된 성공 응답을 반환하지 않기 위해서다. 기존 단건 조회와 같은 `VehicleNotFoundException`을 사용하므로 존재하지 않는 차량 삭제 요청도 `404 Not Found`로 일관되게 처리할 수 있다.
+
+## 5. vehicleRepository.delete(vehicle)의 역할
+
+`VehicleRepository`는 `JpaRepository<Vehicle, Long>`을 상속하므로 기본 삭제 메서드를 이미 사용할 수 있다. 조회된 엔티티를 `delete()`에 전달하면 JPA가 해당 엔티티를 삭제 대상으로 처리한다.
+
+일반적으로 트랜잭션이 커밋되는 과정에서 다음 의미의 SQL이 실행된다.
+
+```sql
+DELETE FROM vehicles WHERE id = ?;
+```
+
+Repository에 별도의 삭제 메서드를 직접 선언할 필요는 없다.
+
+## 6. @Transactional을 사용한 이유
+
+삭제 Service 메서드에 `@Transactional`을 붙여 차량 조회와 삭제를 하나의 작업 단위로 묶었다.
+
+```text
+트랜잭션 시작
+→ 차량 조회
+→ 삭제 요청
+→ 정상 종료 시 커밋
+→ 예외 발생 시 롤백
+```
+
+데이터를 변경하는 업무이므로 트랜잭션 경계를 Controller가 아니라 Service에 두었다.
+
+## 7. Controller의 삭제 요청 연결
+
+Controller에 다음 경로의 DELETE 요청을 처리하는 메서드를 연결했다.
+
+```http
+DELETE /api/vehicles/{vehicleId}
+```
+
+클래스의 기본 경로인 `/api/vehicles`와 메서드의 `/{vehicleId}`가 합쳐져 최종 URL이 된다.
+
+```text
+@DeleteMapping("/{vehicleId}")
+→ HTTP DELETE 요청을 메서드에 연결
+
+@PathVariable Long vehicleId
+→ URL의 차량 ID를 Long 타입 변수로 받음
+
+vehicleService.deleteVehicle(vehicleId)
+→ 실제 조회와 삭제 처리를 Service에 위임
+```
+
+현재 Controller가 `void`를 반환하므로 삭제 기능 자체에는 문제가 없다. 응답 본문이 없음을 더 분명하게 표현하려면 추후 `204 No Content`를 지정할 수 있다.
+
+## 8. 삭제 API Postman 테스트
+
+JWT 인증이 필요한 현재 보안 설정을 기준으로 Authorization 헤더를 포함한다.
+
+```http
+DELETE /api/vehicles/1
+Authorization: Bearer {accessToken}
+```
+
+요청 본문은 보내지 않는다.
+
+확인할 항목:
+
+- 존재하는 차량 삭제가 성공하는지
+- 삭제 후 같은 ID로 단건 조회하면 `404 Not Found`가 나오는지
+- 존재하지 않는 ID를 삭제하면 `404 Not Found`가 나오는지
+- JWT가 없으면 요청이 거부되는지
+
+## 9. 삭제 API 핵심 요약
+
+> 차량 삭제 API는 URL의 vehicleId로 기존 차량을 조회하고, 없으면 VehicleNotFoundException을 던지며, 있으면 JpaRepository의 delete(vehicle)로 삭제한다. 요청 본문이 없으므로 별도 DTO가 필요하지 않고, 조회와 삭제는 @Transactional 안에서 하나의 작업으로 처리한다.
+
+---
+
+# 2026-08-07 학습 기록: 차량 전체 수정 API
+
+## 1. 목표와 현재 구현 상태
+
+차량의 상태 하나만 변경하는 PATCH API와 별도로 차량 기본 정보를 한 번에 수정하는 기능을 구현하고 있다.
+
+목표 URL은 다음과 같다.
+
+```http
+PUT /api/vehicles/{vehicleId}
+```
+
+현재 완료된 부분:
+
+- `VehicleUpdateRequest` DTO 생성과 검증 조건 작성
+- `VehicleRepository.findByVehicleNumber()` 추가
+- `Vehicle.updateInfo()` 도메인 메서드 작성
+- `VehicleService.updateVehicle()` 작성
+- 자기 차량번호 허용 및 다른 차량번호 중복 검사
+- `VehicleResponse` 반환 처리
+
+아직 남은 부분:
+
+- Controller에 `@PutMapping("/{vehicleId}")` 연결
+- Postman으로 정상 수정과 예외 상황 확인
+- 자동화 테스트 작성
+
+차량 검색·필터, 예약 기능, 관리자 권한 제한은 이번 범위에 포함하지 않는다.
+
+## 2. PUT 전체 수정과 PATCH 상태 변경의 차이
+
+기존 상태 변경 API는 차량의 `status` 하나만 변경한다.
+
+```http
+PATCH /api/vehicles/3/status
+```
+
+전체 수정 API는 차량의 기본 정보를 모두 전달받아 교체한다.
+
+```http
+PUT /api/vehicles/3
+```
+
+전체 수정 대상은 다음과 같다.
+
+- 제조사 `manufacturer`
+- 모델명 `modelName`
+- 차량번호 `vehicleNumber`
+- 대여 유형 `rentalType`
+- 연료 유형 `fuelType`
+- 시간당 요금 `hourlyRate`
+- 일일 요금 `dailyRate`
+
+`id`, `status`, `createdAt`은 이번 전체 수정 대상이 아니다. 상태 변경은 이미 별도의 PATCH API가 담당한다.
+
+## 3. VehicleUpdateRequest DTO
+
+수정 요청 JSON을 받기 위해 생성 전용 DTO와 별도로 `VehicleUpdateRequest`를 만들었다.
+
+적용한 검증 조건:
+
+```text
+manufacturer  → @NotBlank
+modelName     → @NotBlank
+vehicleNumber → @NotBlank
+rentalType    → @NotNull
+fuelType      → @NotNull
+hourlyRate    → @NotNull, @Positive
+dailyRate     → @NotNull, @Positive
+```
+
+PUT 전체 수정에서는 모든 수정 가능 필드를 보내는 것을 기본으로 하므로 각 필드를 필수값으로 검증한다.
+
+## 4. VehicleCreateRequest와 VehicleUpdateRequest를 분리한 이유
+
+현재는 두 DTO의 필드와 검증 조건이 비슷하지만 생성과 수정은 서로 다른 API 계약이다.
+
+```text
+VehicleCreateRequest → 새 차량을 등록하기 위한 입력
+VehicleUpdateRequest → 기존 차량의 기본 정보를 교체하기 위한 입력
+```
+
+나중에 생성할 때만 필요한 값, 수정할 수 없는 값, 수정 시에만 필요한 검증 규칙이 생길 수 있다. DTO를 분리하면 한 API의 변경이 다른 API에 의도치 않은 영향을 주지 않는다.
+
+## 5. Service 메서드의 입력과 반환 타입
+
+Service 메서드는 다음 역할로 값을 구분한다.
+
+```text
+Long vehicleId               → 수정할 차량 식별
+VehicleUpdateRequest request → 클라이언트가 보낸 수정값
+VehicleResponse              → 수정 완료된 차량 정보 반환
+```
+
+`VehicleUpdateRequest`는 반환 타입이 아니라 입력 타입이다. 요청값을 그대로 돌려주는 것이 아니라 실제 엔티티의 ID와 상태까지 포함한 수정 결과를 보여주기 위해 `VehicleResponse`를 반환한다.
+
+## 6. 수정할 기존 차량을 먼저 조회하는 이유
+
+전체 수정은 새 `Vehicle`을 만드는 작업이 아니다. 반드시 `vehicleId`로 DB에 저장된 기존 차량을 조회하고 그 엔티티를 변경해야 한다.
+
+```text
+vehicleRepository.findById(vehicleId)
+→ 존재하면 기존 Vehicle 획득
+→ 없으면 VehicleNotFoundException
+```
+
+처음 작성 과정에서 `new Vehicle()`로 새 객체를 만들려 했지만, 새 객체는 DB에서 조회되어 영속성 컨텍스트가 관리하는 기존 차량이 아니다. 따라서 기존 차량 수정과 JPA Dirty Checking이라는 목적에 맞지 않는다.
+
+## 7. 차량번호 중복 검사가 특별한 이유
+
+차량번호에는 DB의 unique 제약이 있으므로 다른 차량이 사용하는 번호로 변경할 수 없다. 하지만 수정 요청에 자신의 현재 차량번호를 그대로 보내는 것은 허용해야 한다.
+
+예를 들어:
+
+```text
+수정 대상 차량 ID: 1
+요청 차량번호: 12가3456
+```
+
+차량번호 조회 결과의 ID도 `1`이면 자기 자신의 번호이므로 정상이다. 조회 결과의 ID가 `2`이면 다른 차량이 이미 사용하는 번호이므로 중복 예외를 발생시켜야 한다.
+
+## 8. existsByVehicleNumber()만으로 부족한 이유
+
+`existsByVehicleNumber()`는 차량번호가 존재하는지만 `true` 또는 `false`로 알려준다. 그 번호를 사용하는 차량이 수정 대상 자신인지 다른 차량인지 알 수 없다.
+
+따라서 Repository에 다음 의미의 조회 메서드를 추가했다.
+
+```text
+findByVehicleNumber(String vehicleNumber)
+→ Optional<Vehicle>
+```
+
+차량이 없을 수도 있으므로 `Optional<Vehicle>`을 사용한다. 차량이 있다면 해당 엔티티의 ID를 현재 수정 대상 ID와 비교할 수 있다.
+
+## 9. Optional.ifPresent()의 의미
+
+```text
+차량번호에 해당하는 차량이 없음
+→ Optional.empty()
+→ ifPresent 내부를 실행하지 않음
+→ 사용 가능한 차량번호
+
+차량번호에 해당하는 차량이 있음
+→ Optional 안에 Vehicle이 들어 있음
+→ ifPresent 내부 실행
+→ ID 비교
+```
+
+`foundVehicle`은 요청한 차량번호로 DB에서 발견한 차량이고, `vehicleId`는 지금 수정하려는 차량의 ID다.
+
+```text
+foundVehicle.getId().equals(vehicleId)
+→ 두 ID가 같음
+
+!foundVehicle.getId().equals(vehicleId)
+→ 두 ID가 같지 않음
+→ 다른 차량이 해당 번호를 사용 중
+```
+
+`Long`은 객체 타입이므로 값 비교에 `!=`보다 `equals()`를 사용한다.
+
+## 10. 예외는 생성만 하지 말고 throw 해야 함
+
+처음에는 중복 상황에서 다음처럼 예외 객체만 생성했다.
+
+```text
+new DuplicateVehicleNumberException(...)
+```
+
+이것만으로는 프로그램 흐름이 중단되지 않고 예외 객체가 사용되지 않은 채 버려진다. 실제로 중복 수정을 막으려면 `throw`를 사용해 예외를 발생시켜야 한다.
+
+```text
+다른 차량의 번호 발견
+→ DuplicateVehicleNumberException throw
+→ Service 작업 중단
+→ 트랜잭션 롤백
+→ 기존 VehicleExceptionHandler가 409 Conflict로 응답
+```
+
+## 11. Vehicle.updateInfo() 도메인 메서드
+
+Vehicle 엔티티에 차량 기본 정보를 변경하는 `updateInfo()`를 두었다.
+
+처음에는 `Vehicle` 객체 하나를 매개변수로 받고 그 객체의 필드를 복사하는 형태였지만, Service에서 조회한 vehicle을 다시 자기 자신에게 전달하면 다음과 같은 의미가 되어 아무 값도 바뀌지 않는다.
+
+```text
+기존 제조사 = 기존 제조사
+기존 모델명 = 기존 모델명
+기존 차량번호 = 기존 차량번호
+```
+
+현재는 수정할 값을 각각 매개변수로 받아 자신의 필드에 대입한다.
+
+```text
+manufacturer, modelName, vehicleNumber,
+rentalType, fuelType, hourlyRate, dailyRate
+```
+
+엔티티가 `VehicleUpdateRequest` DTO를 직접 받지 않도록 한 이유는 엔티티가 API 요청 계층의 DTO에 의존하지 않게 하기 위해서다.
+
+## 12. setter 대신 updateInfo()를 사용한 이유
+
+공개 setter를 여러 개 사용하면 어디에서든 각 필드를 개별적으로 바꿀 수 있고 변경의 업무 의미가 잘 드러나지 않는다.
+
+```text
+setManufacturer(), setModelName(), ... → 단순 필드 대입
+updateInfo(...)                        → 차량 기본 정보 전체 수정
+```
+
+의도가 드러나는 도메인 메서드를 사용하면 나중에 대여 중에는 정보를 바꿀 수 없다는 규칙이나 요금 검증 같은 업무 규칙을 한곳에 추가하기 쉽다.
+
+## 13. @Transactional과 Dirty Checking 흐름
+
+Service의 전체 수정 메서드에는 `@Transactional`을 적용했다.
+
+```text
+트랜잭션 시작
+→ findById()로 기존 Vehicle 조회
+→ 조회된 Vehicle이 영속성 컨텍스트의 관리 대상이 됨
+→ 차량번호 중복 검사
+→ vehicle.updateInfo()로 필드 변경
+→ 변경된 VehicleResponse 생성 및 반환
+→ 트랜잭션 종료 시 JPA가 변경 감지
+→ UPDATE SQL 실행
+→ 커밋
+```
+
+따라서 조회한 기존 엔티티의 값을 바꾼 뒤 `vehicleRepository.save(vehicle)`를 다시 호출하지 않아도 DB에 반영된다. 단, `new Vehicle()`로 만든 새 객체가 아니라 Repository에서 조회한 영속 엔티티를 변경해야 한다.
+
+## 14. VehicleService.updateVehicle() 최종 처리 순서
+
+```text
+1. vehicleId로 기존 차량 조회
+2. 없으면 VehicleNotFoundException
+3. request의 vehicleNumber로 차량 조회
+4. 같은 번호의 차량이 있고 ID가 다르면 DuplicateVehicleNumberException
+5. 같은 ID라면 자신의 번호이므로 허용
+6. 번호가 존재하지 않아도 허용
+7. request의 값을 vehicle.updateInfo()에 전달
+8. 변경된 vehicle을 VehicleResponse로 변환
+9. VehicleResponse 반환
+10. 트랜잭션 커밋 시 DB UPDATE
+```
+
+## 15. 앞으로 Controller에서 연결할 흐름
+
+아직 Controller의 PUT 메서드는 작성하지 않았다. 다음 단계에서 연결할 요청 흐름은 다음과 같다.
+
+```text
+@PutMapping("/{vehicleId}")
+→ @PathVariable로 vehicleId 받기
+→ @RequestBody로 VehicleUpdateRequest 받기
+→ @Valid로 DTO 검증
+→ vehicleService.updateVehicle(vehicleId, request) 호출
+→ VehicleResponse 반환
+```
+
+예정된 요청 예시:
+
+```http
+PUT /api/vehicles/1
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+```
+
+```json
+{
+  "manufacturer": "현대",
+  "modelName": "아반떼",
+  "vehicleNumber": "12가3456",
+  "rentalType": "GENERAL",
+  "fuelType": "GASOLINE",
+  "hourlyRate": 10000,
+  "dailyRate": 100000
+}
+```
+
+실제 enum 문자열은 프로젝트의 `RentalType`, `FuelType`에 선언된 상수를 기준으로 입력해야 한다.
+
+## 16. 전체 수정 API에서 확인해야 할 테스트
+
+- 존재하는 차량을 정상적으로 수정할 수 있는지
+- 응답에 수정된 기본 정보가 들어 있는지
+- 수정 후 단건 조회에서도 변경 내용이 유지되는지
+- 존재하지 않는 vehicleId이면 `404 Not Found`인지
+- 자신의 기존 차량번호를 그대로 보내도 성공하는지
+- 다른 차량이 사용하는 번호로 변경하면 `409 Conflict`인지
+- 필수 문자열이 누락되거나 공백이면 `400 Bad Request`인지
+- 요금이 null, 0 또는 음수이면 `400 Bad Request`인지
+- 잘못된 enum 문자열이면 요청 변환이 실패하는지
+- JWT가 없으면 요청이 거부되는지
+
+## 17. 현재 검증 상태
+
+소스 구조와 메서드 연결은 확인했지만 Gradle 컴파일과 테스트는 완료하지 못했다. 프로젝트가 사용하는 Gradle 9.5.1 배포본이 로컬 캐시에 없었고, 실행 환경의 네트워크 제한으로 배포본 다운로드가 차단됐다.
+
+```text
+코드 검토 및 수정 완료
+Gradle 컴파일 검증 미완료
+Controller PUT 연결 미완료
+Postman 테스트 미완료
+```
+
+## 18. 전체 수정 API 핵심 요약
+
+> 차량 전체 수정 API는 vehicleId로 DB의 기존 Vehicle을 조회하고, 요청 차량번호가 다른 차량과 중복되는지 ID로 구분한다. 문제가 없으면 request의 값을 Vehicle.updateInfo()에 전달한다. @Transactional 안에서 조회한 영속 엔티티가 변경되므로 JPA Dirty Checking이 UPDATE SQL을 실행하며, Service는 변경된 내용을 VehicleResponse로 반환한다.
+
+---
+
 ## 프로젝트 목적
 
 이 프로젝트는 카셰어링 및 렌터카 통합 운영 시스템이다.

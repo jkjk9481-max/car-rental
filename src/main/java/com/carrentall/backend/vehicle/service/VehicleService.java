@@ -4,7 +4,10 @@ import com.carrentall.backend.vehicle.dto.VehicleCreateRequest;
 import com.carrentall.backend.vehicle.dto.VehicleResponse;
 import com.carrentall.backend.vehicle.dto.VehicleStatusUpdateRequest;
 import com.carrentall.backend.vehicle.dto.VehicleUpdateRequest;
+import com.carrentall.backend.vehicle.entity.FuelType;
+import com.carrentall.backend.vehicle.entity.RentalType;
 import com.carrentall.backend.vehicle.entity.Vehicle;
+import com.carrentall.backend.vehicle.entity.VehicleStatus;
 import com.carrentall.backend.vehicle.exception.DuplicateVehicleNumberException;
 import com.carrentall.backend.vehicle.exception.VehicleNotFoundException;
 import com.carrentall.backend.vehicle.repository.VehicleRepository;
@@ -20,6 +23,10 @@ public class VehicleService {
 
     public VehicleService(VehicleRepository vehicleRepository) {
         this.vehicleRepository = vehicleRepository;
+    }
+
+    private VehicleResponse toResponse(Vehicle vehicle){
+        return new VehicleResponse(vehicle.getId() , vehicle.getManufacturer() , vehicle.getModelName() , vehicle.getVehicleNumber() , vehicle.getRentalType() , vehicle.getFuelType() , vehicle.getStatus() , vehicle.getHourlyRate() , vehicle.getDailyRate());
     }
 
     // 차량번호 중복 확인
@@ -45,7 +52,7 @@ public class VehicleService {
         List<VehicleResponse> vehicles = vehicleRepository.findAll()
                 .stream()
                 // 매개변수 -> 반환할 표현식 , 왼쪽객체를 오른쪽 방식으로 반환한다
-                .map(vehicle -> new VehicleResponse(vehicle.getId() , vehicle.getManufacturer() , vehicle.getModelName() , vehicle.getVehicleNumber() , vehicle.getRentalType() , vehicle.getFuelType() , vehicle.getStatus() , vehicle.getHourlyRate() , vehicle.getDailyRate()))
+                .map(vehicle -> toResponse(vehicle))
                 .toList();
 
         return vehicles;
@@ -61,8 +68,7 @@ public class VehicleService {
                 .orElseThrow(() -> new VehicleNotFoundException("해당 차량이 존재하지 않습니다."));
 
         // 있으면 VehicleResponse로 변환해 반환
-        VehicleResponse vehicleResponse = new VehicleResponse(vehicle.getId() , vehicle.getManufacturer() , vehicle.getModelName() , vehicle.getVehicleNumber() , vehicle.getRentalType() , vehicle.getFuelType() , vehicle.getStatus() , vehicle.getHourlyRate() , vehicle.getDailyRate());
-        return vehicleResponse;
+        return toResponse(vehicle);
     }
 
     @Transactional // 정상 종료되면 변경 내용이 DB에 반영 , 도중에 예외가 발생하면 일반적으로 변경 사항이 롤백된다
@@ -88,7 +94,6 @@ public class VehicleService {
     }
 
     @Transactional
-
     //  1. findById(vehicleId)로 수정 대상 차량을 조회합니다.
     //  2. 없으면 VehicleNotFoundException을 던집니다.
     //  3. 요청한 차량번호를 사용하는 차량이 있는지 조회합니다.
@@ -114,8 +119,36 @@ public class VehicleService {
         vehicle.updateInfo(request.getManufacturer(), request.getModelName(), request.getVehicleNumber(),
                 request.getRentalType(), request.getFuelType(), request.getHourlyRate(), request.getDailyRate());
 
-        return new VehicleResponse(vehicle.getId(), vehicle.getManufacturer(), vehicle.getModelName(),
-                vehicle.getVehicleNumber(), vehicle.getRentalType(), vehicle.getFuelType(),
-                vehicle.getStatus(), vehicle.getHourlyRate(), vehicle.getDailyRate());
+        return toResponse(vehicle);
+        //  차량 id로 기존 차량을 찾고,
+        //  요청값으로 차량 기본 정보를 수정한 뒤,
+        //  수정된 차량 정보를 응답으로 반환한다
+    }
+
+    // 차량 상태별 조회
+    public List<VehicleResponse> getVehiclesByStatus(VehicleStatus status) {
+        List<VehicleResponse> vehicles = vehicleRepository.findByStatus(status)
+                .stream()
+                .map(vehicle ->  toResponse(vehicle))
+                .toList();
+
+        return vehicles;
+
+        // Repository가 DB에서 “요청받은 상태와 일치하는 차량들”을 List<Vehicle>로 조회하고, Service가 그 결과를 List<VehicleResponse>로 변환합니다.
+    }
+
+    // 복합 필터 검색
+    public List<VehicleResponse> searchVehicles(VehicleStatus status , FuelType fuelType , RentalType rentalType) {
+        List<VehicleResponse> vehicles = vehicleRepository.findByStatusAndFuelTypeAndRentalType(status, fuelType, rentalType)
+                .stream()
+                .map(this::toResponse)
+                .toList();
+
+        return vehicles;
+
+        //  1. status, fuelType, rentalType 조건을 받음
+        //  2. Repository에서 세 조건이 모두 일치하는 차량 조회
+        //  3. Vehicle Entity 목록을 VehicleResponse 목록으로 변환
+        //  4. 클라이언트에게 반환
     }
 }

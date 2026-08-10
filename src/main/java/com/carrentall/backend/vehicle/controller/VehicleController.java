@@ -3,6 +3,10 @@ package com.carrentall.backend.vehicle.controller;
 import com.carrentall.backend.vehicle.dto.VehicleCreateRequest;
 import com.carrentall.backend.vehicle.dto.VehicleResponse;
 import com.carrentall.backend.vehicle.dto.VehicleStatusUpdateRequest;
+import com.carrentall.backend.vehicle.dto.VehicleUpdateRequest;
+import com.carrentall.backend.vehicle.entity.FuelType;
+import com.carrentall.backend.vehicle.entity.RentalType;
+import com.carrentall.backend.vehicle.entity.VehicleStatus;
 import com.carrentall.backend.vehicle.service.VehicleService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
@@ -52,10 +56,24 @@ public class VehicleController {
         vehicleService.deleteVehicle(vehicleId);
     }
 
-    //  PUT 요청 받기
-    //  → URL에서 vehicleId 받기
-    //  → 요청 본문을 VehicleUpdateRequest로 받기
-    //  → @Valid로 입력값 검증
-    //  → 서비스의 전체 수정 메서드 호출
-    //  → 변경된 VehicleResponse 반환
+    //  PUT /api/vehicles/{vehicleId} 요청을 받는다.
+    //  URL에서 vehicleId를 꺼낸다.
+    //  Body를 VehicleUpdateRequest로 받는다.
+    //  @Valid로 검증한다.
+    //  VehicleService.updateVehicle(vehicleId, request)를 호출한다.
+    //  수정된 VehicleResponse를 반환한다.
+    @PutMapping("/{vehicleId}")
+    public VehicleResponse updateVehicle(@PathVariable Long vehicleId, @RequestBody @Valid VehicleUpdateRequest request) {
+        return vehicleService.updateVehicle(vehicleId , request);
+    }
+
+    @GetMapping("/status/{status}")
+    public List<VehicleResponse> getVehiclesByStatus(@PathVariable VehicleStatus status) {
+        return vehicleService.getVehiclesByStatus(status);
+    }
+
+    @GetMapping("/search")
+    public List<VehicleResponse> searchVehicles(@RequestParam VehicleStatus status , @RequestParam FuelType fuelType , @RequestParam RentalType rentalType) {
+        return vehicleService.searchVehicles(status, fuelType, rentalType);
+    }
 }
