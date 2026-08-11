@@ -10,7 +10,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class SignupRequest {
 
-    @NotBlank // 비어있거나 공백만 있는 값을 막기위해 필요
+    @NotBlank // null, 빈 문자열, 공백만 있는 문자열을 허용하지 않는 검증
     @Email
     @Size(max = 100)
     private String email;
@@ -24,6 +24,4 @@ public class SignupRequest {
 
     @NotBlank
     private String phoneNumber;
-
-
 }

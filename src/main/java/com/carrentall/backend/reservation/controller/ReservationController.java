@@ -4,11 +4,11 @@ import com.carrentall.backend.reservation.dto.ReservationCreateRequest;
 import com.carrentall.backend.reservation.dto.ReservationResponse;
 import com.carrentall.backend.reservation.service.ReservationService;
 import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController // 메서드 반환값을 JSON 응답으로 전달
 @RequestMapping("/api/reservations") // 예약 API의 공통 주소 설정
@@ -40,6 +40,22 @@ public class ReservationController {
         //  authentication.getName()
         //  → "chulsoo@email.com"
         return reservationService.createReservation(request , email);
+    }
+
+    @GetMapping("/my")
+    public List<ReservationResponse> getMyReservations(Authentication authentication) {
+        String email =  authentication.getName(); // 인증 정보에서 현재 사용자의 email을 꺼낸다 ( DB 조회는 하지 않는다 )
+        return reservationService.getMyReservations(email);
+        // Spring Security가 이미 인증해 둔 현재 로그인 사용자의 인증 정보에서 email을 꺼내 email 변수에 저장한다.
+
+        //  1. 사용자가 JWT를 담아 GET /api/reservations/my 요청
+        //  2. Spring Security가 JWT를 검증
+        //  3. 검증된 사용자의 인증 정보를 Authentication에 저장
+        //  4. Controller가 authentication.getName()으로 email을 꺼냄
+        //  5. Controller가 email을 Service에 전달
+        //  6. Service가 DB에서 그 email에 해당하는 User를 조회
+        //  7. 그 User의 예약 목록만 조회
+        //  8. List<ReservationResponse>로 반환
     }
 
 

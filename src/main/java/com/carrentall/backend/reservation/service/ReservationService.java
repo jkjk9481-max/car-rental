@@ -1,5 +1,6 @@
 package com.carrentall.backend.reservation.service;
 
+import com.carrentall.backend.auth.exception.InvalidCredentialsException;
 import com.carrentall.backend.reservation.dto.ReservationCreateRequest;
 import com.carrentall.backend.reservation.dto.ReservationResponse;
 import com.carrentall.backend.reservation.entity.Reservation;
@@ -14,6 +15,8 @@ import com.carrentall.backend.vehicle.repository.VehicleRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 @Service
 public class ReservationService {
 
@@ -25,6 +28,18 @@ public class ReservationService {
         this.reservationRepository = reservationRepository;
         this.userRepository = userRepository;
         this.vehicleRepository = vehicleRepository;
+    }
+
+    private ReservationResponse toResponse(Reservation reservation) {
+        return new ReservationResponse(
+                reservation.getId(),
+                reservation.getUser().getId(),
+                reservation.getVehicle().getId(),
+                reservation.getStartAt(),
+                reservation.getEndAt(),
+                reservation.getStatus(),
+                reservation.getCreatedAt()
+        );
     }
 
     @Transactional
@@ -44,11 +59,30 @@ public class ReservationService {
         //     User + Vehicle + 시작 시간 + 종료 시간으로
         //     Reservation 객체를 만든다
         Reservation reservation = new Reservation(user , vehicle , request.getStartAt() , request.getEndAt());
-        reservationRepository.save(reservation);
         vehicle.changeStatus(VehicleStatus.RESERVED);
+        reservationRepository.save(reservation);
 
-        ReservationResponse response = new ReservationResponse(reservation.getId() , user.getId() , vehicle.getId() , reservation.getStartAt() , reservation.getEndAt() , reservation.getStatus() , reservation.getCreatedAt());
-        return response;
+        return toResponse(reservation);
+    }
+
+    @Transactional(readOnly = true) // 데이터를 변경하지 않고 조회만 하는 작업 ( 조회만 할떄 많이 사용함)
+    // 저장 * 수정 * 삭제는 -> 붙히지않는다
+    public List<ReservationResponse> getMyReservations(String email){
+        // email로 User 조회
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("사용자가 존재하지 않습니다."));
+
+        // 해당 User의 예약 목록 조회
+        return reservationRepository.findByUser(user)
+                .stream()
+                .map(this::toResponse)
+                .toList();
+        //  1. Controller에서 로그인 사용자의 email 전달
+        //  2. email로 User 조회
+        //  3. User가 없으면 예외 발생 → 메서드 즉시 종료
+        //  4. User가 있으면 findByUser(user)로 예약 목록 조회
+        //  5. 각각의 Reservation을 toResponse()로 변환
+        //  6. List<ReservationResponse>로 모아서 반환
     }
 
 
