@@ -15,4 +15,18 @@ public class ReservationExceptionHandler {
         String message = e.getMessage();
         return new ResponseEntity<>(message, status);
     }
+    
+    @ExceptionHandler(ReservationNotFoundException.class)
+    public ResponseEntity<String> handleReservationNotFoundException(ReservationNotFoundException e) {
+        HttpStatus status = HttpStatus.NOT_FOUND; // 예약을 찾을 수 없다
+        String message = e.getMessage();
+        return new ResponseEntity<>(message, status);
+    }
+    
+    @ExceptionHandler(ReservationAccessDeniedException.class)
+    public ResponseEntity<String> handleReservationAccessDeniedException(ReservationAccessDeniedException e) {
+        HttpStatus status = HttpStatus.FORBIDDEN; // 예약은 있지만 소유자가 다르다
+        String message = e.getMessage();
+        return new ResponseEntity<>(message, status);
+    }
 }

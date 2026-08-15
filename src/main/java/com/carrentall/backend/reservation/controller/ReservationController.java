@@ -4,7 +4,6 @@ import com.carrentall.backend.reservation.dto.ReservationCreateRequest;
 import com.carrentall.backend.reservation.dto.ReservationResponse;
 import com.carrentall.backend.reservation.service.ReservationService;
 import jakarta.validation.Valid;
-import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -44,6 +43,7 @@ public class ReservationController {
 
     @GetMapping("/my")
     public List<ReservationResponse> getMyReservations(Authentication authentication) {
+        // Authentication 자체가 JWT를 검증하는 것은 아니에요. 앞에서 JwtAuthenticationFilter가 JWT를 먼저 검증하고, 검증된 사용자 정보를 Authentication에 담아둡니다.
         String email =  authentication.getName(); // 인증 정보에서 현재 사용자의 email을 꺼낸다 ( DB 조회는 하지 않는다 )
         return reservationService.getMyReservations(email);
         // Spring Security가 이미 인증해 둔 현재 로그인 사용자의 인증 정보에서 email을 꺼내 email 변수에 저장한다.
@@ -56,6 +56,20 @@ public class ReservationController {
         //  6. Service가 DB에서 그 email에 해당하는 User를 조회
         //  7. 그 User의 예약 목록만 조회
         //  8. List<ReservationResponse>로 반환
+    }
+
+    //  현재 로그인한 사용자가
+    //  자기 예약 중 특정 예약 하나를 상세 조회한다
+    @GetMapping("/{reservationId}")
+    public ReservationResponse getMyReservation(@PathVariable Long reservationId , Authentication authentication) {
+        String email =  authentication.getName();
+        return reservationService.getMyReservation(reservationId, email);
+
+        //  GET /api/reservations/1 요청
+        //  → reservationId = 1
+        //  → JWT에서 현재 로그인 사용자 email 추출
+        //  → Service에 reservationId와 email 전달
+        //  → 내 예약이면 ReservationResponse 반환
     }
 
 

@@ -1,9 +1,10 @@
 package com.carrentall.backend.reservation.service;
 
-import com.carrentall.backend.auth.exception.InvalidCredentialsException;
 import com.carrentall.backend.reservation.dto.ReservationCreateRequest;
 import com.carrentall.backend.reservation.dto.ReservationResponse;
 import com.carrentall.backend.reservation.entity.Reservation;
+import com.carrentall.backend.reservation.exception.ReservationAccessDeniedException;
+import com.carrentall.backend.reservation.exception.ReservationNotFoundException;
 import com.carrentall.backend.reservation.exception.VehicleNotAvailableException;
 import com.carrentall.backend.reservation.repository.ReservationRepository;
 import com.carrentall.backend.user.entity.User;
@@ -83,6 +84,29 @@ public class ReservationService {
         //  4. User가 있으면 findByUser(user)로 예약 목록 조회
         //  5. 각각의 Reservation을 toResponse()로 변환
         //  6. List<ReservationResponse>로 모아서 반환
+    }
+
+    // 1. email로 현재 User 조회
+    //  2. reservationId로 Reservation 조회
+    //  3. 예약이 없으면 ReservationNotFoundException
+    //  4. 예약의 user.id와 현재 user.id 비교
+    //  5. 다르면 ReservationAccessDeniedException
+    //  6. 같으면 toResponse(reservation) 반환
+    @Transactional(readOnly = true)
+    //  조회 전용 메서드라는 의미가 명확해짐
+    //  불필요한 변경 감지 부담을 줄일 수 있음
+    public ReservationResponse getMyReservation(Long reservationId , String email){
+       User user = userRepository.findByEmail(email)
+               .orElseThrow(() -> new RuntimeException("사용자가 존재하지 않습니다."));
+
+       Reservation reservation = reservationRepository.findById(reservationId)
+               .orElseThrow(() -> new ReservationNotFoundException("예약을 찾을 수 없습니다."));
+
+       if(!reservation.getUser().getId().equals(user.getId())){
+           throw new ReservationAccessDeniedException("해당 예약에 접근할 수 없습니다");
+       }
+
+       return toResponse(reservation);
     }
 
 
