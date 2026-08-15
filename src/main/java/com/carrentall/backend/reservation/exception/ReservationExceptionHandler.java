@@ -37,4 +37,20 @@ public class ReservationExceptionHandler {
         String message = e.getMessage();
         return new ResponseEntity<>(message, status);
     }
+    
+    @ExceptionHandler(InvalidReservationTimeException.class)
+    // 예약 시간이 잘못됐다라는걸 표현
+    public ResponseEntity<String> handleInvalidReservationTimeException(InvalidReservationTimeException e) {
+        HttpStatus status = HttpStatus.BAD_REQUEST;
+        String message = e.getMessage();
+        return new ResponseEntity<>(message, status);
+    }
+    
+    @ExceptionHandler(ReservationTimeConflictException.class)
+    // 시간 겹침이라는 비즈니스 오류를 표현
+    public ResponseEntity<String> handleReservationTimeConflictException(ReservationTimeConflictException e) {
+        HttpStatus status = HttpStatus.CONFLICT;
+        String message = e.getMessage();
+        return new ResponseEntity<>(message, status);
+    }
 }

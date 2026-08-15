@@ -4,10 +4,7 @@ import com.carrentall.backend.reservation.dto.ReservationCreateRequest;
 import com.carrentall.backend.reservation.dto.ReservationResponse;
 import com.carrentall.backend.reservation.entity.Reservation;
 import com.carrentall.backend.reservation.entity.ReservationStatus;
-import com.carrentall.backend.reservation.exception.ReservationAccessDeniedException;
-import com.carrentall.backend.reservation.exception.ReservationCannotCancelException;
-import com.carrentall.backend.reservation.exception.ReservationNotFoundException;
-import com.carrentall.backend.reservation.exception.VehicleNotAvailableException;
+import com.carrentall.backend.reservation.exception.*;
 import com.carrentall.backend.reservation.repository.ReservationRepository;
 import com.carrentall.backend.user.entity.User;
 import com.carrentall.backend.user.repository.UserRepository;
@@ -18,6 +15,7 @@ import com.carrentall.backend.vehicle.repository.VehicleRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
@@ -45,8 +43,18 @@ public class ReservationService {
         );
     }
 
+
+
     @Transactional
     public ReservationResponse createReservation(ReservationCreateRequest request , String email){
+        if(!request.getStartAt().isBefore(request.getEndAt())){
+            throw new InvalidReservationTimeException("예약 시작 시간은 종료 시간보다 이전이어야 합니다.");
+        }
+        if(request.getStartAt().isBefore(LocalDateTime.now())){
+            throw new InvalidReservationTimeException("과거 시간으로 예약할 수 없습니다.");
+        }
+
+
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("예약할 수 없는 사용자입니다."));
 
@@ -57,12 +65,16 @@ public class ReservationService {
             // 차량 상태가 AVAILABLE이 아니면 예약할 수 없는 차량이다
             throw new VehicleNotAvailableException("예약할 수 없는 차량입니다");
         }
-
         //     조건을 모두 통과하면
         //     User + Vehicle + 시작 시간 + 종료 시간으로
         //     Reservation 객체를 만든다
+        boolean hasConflict = reservationRepository.existsByVehicleAndStatusAndStartAtLessThanAndEndAtGreaterThan(vehicle , ReservationStatus.RESERVED , request.getEndAt(), request.getStartAt());
+        //  DB에서 같은 차량이고 상태가 RESERVED이면서, 기존 시작 시간이 새 종료 시간보다 빠르고 기존 종료 시간이 새 시작 시간보다 늦은 예약이 존재하는지 확인하여 그 결과를 hasConflict에 저장한다
+        if(hasConflict){
+            throw new ReservationTimeConflictException("이미 해당 시간에 예약된 차량입니다");
+        }
+
         Reservation reservation = new Reservation(user , vehicle , request.getStartAt() , request.getEndAt());
-        vehicle.changeStatus(VehicleStatus.RESERVED);
         reservationRepository.save(reservation);
 
         return toResponse(reservation);
@@ -128,7 +140,6 @@ public class ReservationService {
         }
 
         reservation.cancel();
-        reservation.getVehicle().changeStatus(VehicleStatus.AVAILABLE);
         return toResponse(reservation);
 
         //  예약 취소 성공
