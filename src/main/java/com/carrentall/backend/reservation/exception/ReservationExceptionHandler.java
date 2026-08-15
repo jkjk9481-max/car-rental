@@ -29,4 +29,12 @@ public class ReservationExceptionHandler {
         String message = e.getMessage();
         return new ResponseEntity<>(message, status);
     }
+
+    @ExceptionHandler(ReservationCannotCancelException.class)
+    // 예약은 존재하지만 현재 상태 때문에 취소할 수 없을 때 발생
+    public ResponseEntity<String> handleReservationCannotCancelException(ReservationCannotCancelException e) {
+        HttpStatus status = HttpStatus.CONFLICT;
+        String message = e.getMessage();
+        return new ResponseEntity<>(message, status);
+    }
 }

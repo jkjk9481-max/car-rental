@@ -72,5 +72,17 @@ public class ReservationController {
         //  → 내 예약이면 ReservationResponse 반환
     }
 
+    @PatchMapping("/{reservationId}/cancel")
+    public ReservationResponse cancelReservation(@PathVariable Long reservationId , Authentication authentication) {
+        String email =  authentication.getName();
+        return reservationService.cancelReservation(reservationId, email);
+
+        //  PATCH /api/reservations/1/cancel
+        //  → reservationId = 1
+        //  → authentication.getName()으로 현재 사용자 email 추출
+        //  → reservationService.cancelReservation(reservationId, email)
+        //  → ReservationResponse 반환
+    }
+
 
 }

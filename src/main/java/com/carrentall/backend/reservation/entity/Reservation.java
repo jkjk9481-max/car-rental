@@ -47,4 +47,9 @@ public class Reservation {
         this.status = ReservationStatus.RESERVED;
         this.createdAt = LocalDateTime.now();
     }
+
+    public void cancel(){
+        this.status = ReservationStatus.CANCELED;
+        // 예약을 취소한다는 의미가 분명함
+    }
 }

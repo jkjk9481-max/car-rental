@@ -3,7 +3,9 @@ package com.carrentall.backend.reservation.service;
 import com.carrentall.backend.reservation.dto.ReservationCreateRequest;
 import com.carrentall.backend.reservation.dto.ReservationResponse;
 import com.carrentall.backend.reservation.entity.Reservation;
+import com.carrentall.backend.reservation.entity.ReservationStatus;
 import com.carrentall.backend.reservation.exception.ReservationAccessDeniedException;
+import com.carrentall.backend.reservation.exception.ReservationCannotCancelException;
 import com.carrentall.backend.reservation.exception.ReservationNotFoundException;
 import com.carrentall.backend.reservation.exception.VehicleNotAvailableException;
 import com.carrentall.backend.reservation.repository.ReservationRepository;
@@ -107,6 +109,33 @@ public class ReservationService {
        }
 
        return toResponse(reservation);
+    }
+
+    @Transactional
+    public ReservationResponse cancelReservation(Long reservationId , String email){
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("사용자가 존재하지 않습니다."));
+
+        Reservation reservation = reservationRepository.findById(reservationId)
+                .orElseThrow(() -> new ReservationNotFoundException("예약을 찾을 수 없습니다."));
+
+        if(!reservation.getUser().getId().equals(user.getId())){
+            throw new ReservationAccessDeniedException("해당 예약에 접근할 수 없습니다");
+        }
+
+        if(!ReservationStatus.RESERVED.equals(reservation.getStatus())){
+            throw new ReservationCannotCancelException("예약을 취소 할 수 없습니다.");
+        }
+
+        reservation.cancel();
+        reservation.getVehicle().changeStatus(VehicleStatus.AVAILABLE);
+        return toResponse(reservation);
+
+        //  예약 취소 성공
+        //  → 예약 상태 변경
+        //  → 차량 상태 변경
+        //  → 트랜잭션 정상 종료
+        //  → DB 반영
     }
 
 
