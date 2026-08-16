@@ -157,7 +157,16 @@ public class ReservationService {
 
     // 예약 금액
     private Long calculateTotalPrice(Vehicle vehicle , LocalDateTime startAt, LocalDateTime endAt){
+        // 1. startAt ~ endAt 사이의 전체 시간을 구한다.
+        // 2. 차량 타입이 CAR_SHARING이면:
+        //   - 전체 시간을 시간 단위로 올림 계산한다.
+        //   - 시간 수 × hourlyRate로 총 금액 계산.
+        //  3. 차량 타입이 RENT_A_CAR이면:
+        //   - 전체 기간을 일 단위로 올림 계산한다.
+        //   - 일수 × dailyRate로 총 금액 계산.
+        //  4. 둘 다 아니면 예외 발생.
         Duration duration = Duration.between(startAt, endAt); // 전체 예약 기간 구하기
+        // startAt부터 endAt까지 시간이 얼마나 되는지 계산한다.
         // 차량의 RentalType 확인하기
         if(RentalType.CAR_SHARING == vehicle.getRentalType()){
             Long hours = (duration.getSeconds() + 3599) / 3600;
