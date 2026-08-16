@@ -18,6 +18,7 @@ public class ReservationResponse {
     private LocalDateTime startAt;
     private LocalDateTime endAt;
     private ReservationStatus status;
+    private Long totalPrice;
     private LocalDateTime createdAt;
     
     

@@ -1,5 +1,416 @@
 # Car Rental / Car Sharing Project Note
 
+# 2026-08-15 학습 기록: 예약 기본 시간 검증과 예약 시간 겹침 검증
+
+## 1. 이번 단계에서 구현한 범위
+
+이번 단계에서는 예약 생성 시 잘못된 시간과 기존 예약에 겹치는 시간을 차단했다.
+
+- 시작 시간은 종료 시간보다 반드시 이전이어야 한다.
+- 시작 시간과 종료 시간이 같으면 예약할 수 없다.
+- 시작 시간이 종료 시간보다 늦으면 예약할 수 없다.
+- 과거 시간으로 예약을 시작할 수 없다.
+- 같은 차량의 `RESERVED` 예약과 시간이 겹치면 예약할 수 없다.
+- `CANCELED` 예약은 이미 취소되었으므로 겹침 검사에서 제외한다.
+- 잘못된 시간 자체는 `400 Bad Request`로 처리한다.
+- 기존 예약과의 시간 충돌은 `409 Conflict`로 처리한다.
+
+이번에 만들거나 수정한 주요 클래스는 다음과 같다.
+
+```text
+InvalidReservationTimeException
+ReservationTimeConflictException
+ReservationExceptionHandler
+ReservationRepository
+ReservationService
+```
+
+아직 가격 계산, 관리자 전체 예약 조회, 결제 기능과 동시 요청 제어는 구현하지 않았다.
+
+## 2. 예약 생성 API의 전체 흐름
+
+예약 생성 요청은 다음 순서로 처리된다.
+
+```text
+POST /api/reservations 요청
+    ↓
+Controller가 Authentication.getName()으로 로그인 사용자의 email 확인
+    ↓
+ReservationService.createReservation(request, email) 호출
+    ↓
+시작 시간과 종료 시간의 순서 검증
+    ↓
+시작 시간이 과거인지 검증
+    ↓
+email로 User 조회
+    ↓
+vehicleId로 Vehicle 조회
+    ↓
+차량 자체가 운영 가능한 상태인지 확인
+    ↓
+같은 차량의 RESERVED 예약과 새 시간이 겹치는지 확인
+    ↓
+겹치지 않으면 Reservation 객체 생성
+    ↓
+ReservationRepository.save(reservation)로 저장
+    ↓
+ReservationResponse로 변환하여 반환
+```
+
+앞 단계에서 예외가 발생하면 그 아래 코드는 실행되지 않는다. 예를 들어 시간이 겹치면 `Reservation` 객체 생성과 `save()`는 실행되지 않는다.
+
+## 3. 기본 예약 시간 검증
+
+### 시작 시간이 종료 시간보다 이전인지 확인
+
+현재 사용하는 핵심 조건은 다음 의미를 가진다.
+
+```java
+request.getStartAt().isBefore(request.getEndAt())
+```
+
+이 표현은 "새 예약의 시작 시간이 새 예약의 종료 시간보다 빠른가?"를 묻는다.
+
+```text
+시작 14:00, 종료 18:00 → true
+시작 14:00, 종료 14:00 → false
+시작 18:00, 종료 14:00 → false
+```
+
+정상 조건이 `true`이므로, 잘못된 경우에 예외를 발생시키려면 앞에 `!`를 붙인다.
+
+```java
+if (!request.getStartAt().isBefore(request.getEndAt())) {
+    throw new InvalidReservationTimeException(...);
+}
+```
+
+이 조건 하나로 시작과 종료가 같은 경우와 시작이 더 늦은 경우를 모두 차단한다. 따라서 별도의 `equals()` 검사는 중복이라 필요하지 않다.
+
+### 과거 시간인지 확인
+
+```java
+request.getStartAt().isBefore(LocalDateTime.now())
+```
+
+`LocalDateTime.now()`는 코드가 실행되는 순간의 서버 현재 시간을 만든다. 시작 시간이 현재 시간보다 앞서 있으면 이미 지나간 시간으로 예약하려는 것이므로 예외를 발생시킨다.
+
+```text
+현재 13:00, 시작 12:00 → true → 과거이므로 예외
+현재 13:00, 시작 15:00 → false → 다음 단계 진행
+```
+
+시간 자체가 잘못된 경우에는 `InvalidReservationTimeException`을 발생시킨다. 이 예외는 Handler에서 `400 Bad Request`로 처리한다. 사용자가 보낸 시간 값을 수정해야 해결되는 문제이기 때문이다.
+
+## 4. 전용 예외를 만든 이유
+
+### InvalidReservationTimeException
+
+요청의 시간 자체가 잘못된 상황을 나타낸다.
+
+```text
+시작 시간 = 종료 시간
+시작 시간 > 종료 시간
+시작 시간이 과거
+```
+
+일반 `RuntimeException` 대신 전용 예외를 사용하면 예외 이름만 보고도 원인을 알 수 있고, Handler에서 정확한 HTTP 상태로 변환할 수 있다.
+
+### ReservationTimeConflictException
+
+새 예약의 시간 자체는 정상이지만 같은 차량의 기존 유효 예약과 겹치는 상황을 나타낸다.
+
+```text
+시간 순서 정상
+미래 시간 정상
+하지만 DB의 기존 예약과 충돌
+```
+
+이 상황은 요청 형식이 틀렸다기보다 현재 서버에 저장된 예약 상태와 충돌한 것이므로 `409 Conflict`로 처리한다.
+
+### ReservationExceptionHandler의 역할
+
+Service는 상황에 맞는 예외를 발생시키고, `ReservationExceptionHandler`는 예외를 HTTP 응답으로 바꾼다.
+
+```text
+InvalidReservationTimeException
+→ 400 Bad Request
+
+ReservationTimeConflictException
+→ 409 Conflict
+```
+
+예외 클래스 자체가 자동으로 상태 코드를 정하는 것은 아니다. `@ExceptionHandler`가 해당 예외와 HTTP 상태를 연결해야 한다.
+
+## 5. 예약 시간 겹침 공식
+
+기존 예약과 새 예약이 겹치는 조건은 다음과 같다.
+
+```text
+기존예약.startAt < 새예약.endAt
+AND
+기존예약.endAt > 새예약.startAt
+```
+
+두 조건이 모두 참이면 두 예약이 공유하는 시간 구간이 존재한다.
+
+예를 들어 기존 예약이 14:00부터 18:00까지이고 새 예약이 15:00부터 17:00까지라면 다음과 같다.
+
+```text
+기존 시작 14:00 < 새 종료 17:00 → true
+기존 종료 18:00 > 새 시작 15:00 → true
+true AND true → 겹침
+```
+
+새 예약이 18:00부터 20:00까지라면 다음과 같다.
+
+```text
+기존 시작 14:00 < 새 종료 20:00 → true
+기존 종료 18:00 > 새 시작 18:00 → false
+true AND false → 겹치지 않음
+```
+
+`<`와 `>`를 사용하므로 기존 예약의 종료 시각과 새 예약의 시작 시각이 정확히 같으면 겹치지 않는다. 따라서 앞 예약이 18시에 끝나면 다음 예약은 18시에 시작할 수 있다.
+
+## 6. 왜 같은 차량의 RESERVED 예약만 검사하는가
+
+### 같은 차량만 검사하는 이유
+
+서로 다른 차량은 같은 시간에 각각 사용할 수 있다. A 차량의 예약은 B 차량의 예약 가능 시간에 영향을 주지 않는다. 따라서 새로 예약하려는 `vehicle`과 연결된 기존 예약만 조회한다.
+
+### RESERVED만 검사하는 이유
+
+`ReservationStatus.RESERVED`는 현재 유효해서 시간대를 점유하는 예약이라는 뜻이다. 이 상태의 예약과 시간이 겹치면 한 차량을 두 사람이 동시에 사용하게 되므로 차단해야 한다.
+
+### CANCELED를 제외하는 이유
+
+`ReservationStatus.CANCELED`는 기록은 DB에 남아 있지만 더 이상 시간대를 점유하지 않는 예약이다. 취소된 시간대는 다른 사용자가 다시 예약할 수 있어야 한다.
+
+Repository 조건에 `status = RESERVED`를 포함하면 `CANCELED` 예약은 자연스럽게 제외된다.
+
+## 7. ReservationRepository 메서드 해석
+
+현재 선언한 메서드는 다음 역할을 한다.
+
+```java
+boolean existsByVehicleAndStatusAndStartAtLessThanAndEndAtGreaterThan(
+        Vehicle vehicle,
+        ReservationStatus status,
+        LocalDateTime endAt,
+        LocalDateTime startAt
+);
+```
+
+`existsBy`는 조건을 만족하는 예약의 전체 내용을 가져오라는 뜻이 아니다. 그런 예약이 하나라도 존재하는지만 `boolean`으로 알려 달라는 뜻이다.
+
+```text
+존재함 → true
+존재하지 않음 → false
+```
+
+Spring Data JPA는 메서드 이름을 다음 조건으로 해석한다.
+
+```text
+기존 Reservation.vehicle = 전달받은 vehicle
+AND 기존 Reservation.status = 전달받은 status
+AND 기존 Reservation.startAt < 세 번째 인자
+AND 기존 Reservation.endAt > 네 번째 인자
+```
+
+개념적인 SQL은 다음과 같다.
+
+```sql
+WHERE vehicle_id = ?
+  AND status = ?
+  AND start_at < ?
+  AND end_at > ?
+```
+
+## 8. Service에서 Repository 메서드에 전달하는 값
+
+현재 Service의 호출은 다음과 같은 의미를 가진다.
+
+```java
+boolean hasConflict =
+        reservationRepository
+                .existsByVehicleAndStatusAndStartAtLessThanAndEndAtGreaterThan(
+                        vehicle,
+                        ReservationStatus.RESERVED,
+                        request.getEndAt(),
+                        request.getStartAt()
+                );
+```
+
+이 코드를 한 문장으로 읽으면 다음과 같다.
+
+> DB에서 같은 차량이고 상태가 RESERVED이면서, 기존 시작 시간이 새 종료 시간보다 빠르고 기존 종료 시간이 새 시작 시간보다 늦은 예약이 하나라도 있는지 확인하여 그 결과를 hasConflict에 저장한다.
+
+각 인자의 뜻은 다음과 같다.
+
+```text
+vehicle
+→ 새로 예약하려고 조회한 바로 그 차량
+→ 차량이 예약 가능한 상태라는 뜻이 아니라, 같은 차량만 고르는 검색 조건
+
+ReservationStatus.RESERVED
+→ 차량 상태가 아니라 기존 예약의 상태
+→ 취소되지 않은 유효 예약만 고르는 검색 조건
+
+request.getEndAt()
+→ 사용자가 요청한 새 예약의 종료 시간
+→ 기존 startAt < 새 endAt 비교에 사용
+
+request.getStartAt()
+→ 사용자가 요청한 새 예약의 시작 시간
+→ 기존 endAt > 새 startAt 비교에 사용
+```
+
+파라미터 순서가 `endAt`, `startAt`처럼 반대로 보이는 이유는 Repository 메서드 이름의 `StartAt`과 `EndAt`이 새 예약이 아니라 DB에 저장된 기존 예약의 필드를 뜻하기 때문이다.
+
+```text
+StartAtLessThan(request.getEndAt())
+→ 기존 startAt < 새 endAt
+
+EndAtGreaterThan(request.getStartAt())
+→ 기존 endAt > 새 startAt
+```
+
+## 9. hasConflict 이후의 흐름
+
+```java
+if (hasConflict) {
+    throw new ReservationTimeConflictException(...);
+}
+```
+
+- `hasConflict == true`: 겹치는 예약이 있으므로 예외 발생, 저장하지 않음
+- `hasConflict == false`: 겹치는 예약이 없으므로 예약 생성 진행
+
+이때 `ReservationCannotCancelException`을 사용하면 안 된다. 그것은 기존 예약을 취소할 수 없는 상황을 표현하는 예외다. 시간 겹침에는 반드시 `ReservationTimeConflictException`을 사용해야 한다.
+
+## 10. 검증을 이 위치에 둔 이유
+
+현재 `createReservation()`의 검증 순서는 다음과 같다.
+
+```text
+1. 요청 시간 자체 검증
+2. 사용자 조회
+3. 차량 조회
+4. 차량 운영 상태 확인
+5. 같은 차량의 예약 시간 겹침 검사
+6. Reservation 생성 및 저장
+```
+
+기본 시간 검증은 DB 조회가 필요 없으므로 가장 먼저 수행한다. 잘못된 요청이라면 사용자와 차량을 조회할 필요가 없다.
+
+겹침 검사에는 조회된 `Vehicle` 객체가 필요하므로 차량 조회 후에 수행한다. 차량 자체가 운영 불가능하다면 겹침을 조회할 필요도 없으므로 차량 상태 확인 다음에 배치한다.
+
+모든 검증은 `Reservation`을 만들고 저장하기 전에 끝나야 한다. 그래야 잘못된 예약이 DB에 들어가지 않는다.
+
+## 11. VehicleStatus와 ReservationStatus의 차이
+
+두 상태는 이름이 비슷하지만 책임이 다르다.
+
+```text
+VehicleStatus
+→ 차량 자체의 운영 가능 여부
+→ 예: 운행 가능, 정비 중, 비활성
+
+ReservationStatus
+→ 개별 예약이 유효한지 여부
+→ 예: RESERVED, CANCELED
+
+예약 시간대의 이용 가능 여부
+→ Reservation 테이블의 시간 겹침 쿼리로 판단
+```
+
+`VehicleStatus.AVAILABLE` 검사는 차량 자체가 예약 서비스에서 운영 가능한지 확인한다. `ReservationStatus.RESERVED`는 기존 예약이 유효해서 특정 시간대를 점유하는지 확인한다.
+
+따라서 다음과 같이 이해해야 한다.
+
+```text
+차량을 운영할 수 있는가? → VehicleStatus
+기존 예약이 아직 유효한가? → ReservationStatus
+원하는 시간이 비어 있는가? → 예약 시간 겹침 검사
+```
+
+## 12. 차량 상태를 예약 생성 시 RESERVED로 바꾸지 않는 이유
+
+과거의 단순 구조에서는 예약을 만들 때 다음과 같이 차량 상태를 변경했다.
+
+```java
+vehicle.changeStatus(VehicleStatus.RESERVED);
+```
+
+하지만 미래의 특정 시간대 하나가 예약됐다는 이유로 차량 자체를 즉시 `RESERVED`로 바꾸면 문제가 생긴다.
+
+```text
+내일 14:00~18:00 예약 생성
+→ 차량 상태가 지금부터 RESERVED
+→ 내일 10:00~12:00처럼 겹치지 않는 예약도 AVAILABLE 검사에서 차단
+```
+
+시간대 기반 예약에서는 한 차량에 서로 겹치지 않는 여러 예약이 존재할 수 있어야 한다. 따라서 예약 생성 가능 여부는 차량 상태 하나로 판단하지 않고 Reservation 테이블의 시간 겹침 여부로 판단한다.
+
+이 구조에서는 예약 생성 시 `vehicle.changeStatus(RESERVED)`를 제거한다. 생성할 때 차량 상태를 바꾸지 않으므로 예약 취소 시에도 무조건 `vehicle.changeStatus(AVAILABLE)`을 실행하지 않는다. 취소가 정비 중 같은 실제 운영 상태를 잘못 덮어쓸 수 있기 때문이다.
+
+## 13. Reservation 객체 생성과 저장
+
+모든 검증을 통과한 뒤에만 다음 단계로 진행한다.
+
+```text
+Reservation 객체 생성
+→ user 연결
+→ vehicle 연결
+→ 새 startAt 저장
+→ 새 endAt 저장
+→ 생성자에서 status를 RESERVED로 설정
+→ 생성자에서 createdAt을 현재 시간으로 설정
+```
+
+그다음 `reservationRepository.save(reservation)`이 새 예약을 DB에 저장한다. 마지막으로 `toResponse(reservation)`이 Entity를 API 응답용 `ReservationResponse`로 변환한다.
+
+Entity를 그대로 반환하지 않고 Response DTO를 사용하는 이유는 API가 필요한 값만 안정적으로 공개하고 DB 구조와 응답 구조를 분리하기 위해서다.
+
+## 14. @Transactional의 역할
+
+`createReservation()`에 붙은 `@Transactional`은 메서드 내부의 DB 작업을 하나의 작업 단위로 묶는다.
+
+```text
+정상 종료 → 트랜잭션 커밋, 예약 저장 반영
+중간에 RuntimeException 발생 → 일반적으로 롤백, 작업 취소
+```
+
+현재 검증들은 대부분 저장 전에 수행되므로 예외가 발생하면 `save()`까지 도달하지 않는다.
+
+## 15. 현재 코드의 핵심 요약
+
+```text
+잘못된 시간인가?
+→ InvalidReservationTimeException
+→ 400 Bad Request
+
+차량이 존재하지 않는가?
+→ VehicleNotFoundException
+
+차량 자체가 운영 불가능한가?
+→ VehicleNotAvailableException
+
+같은 차량의 RESERVED 예약과 시간이 겹치는가?
+→ ReservationTimeConflictException
+→ 409 Conflict
+
+모든 검증을 통과했는가?
+→ Reservation 생성 및 저장
+→ ReservationResponse 반환
+```
+
+가장 헷갈리기 쉬운 한 문장은 다음과 같다.
+
+> `vehicle`은 같은 차량만 찾기 위한 조건이고, `ReservationStatus.RESERVED`는 유효한 기존 예약만 찾기 위한 조건이며, `request.getEndAt()`과 `request.getStartAt()`은 기존 예약의 시작·종료 필드와 새 예약 시간을 비교하기 위해 전달하는 값이다.
+
+---
+
 ## 2026-08-03 최신 학습 기록: 차량 등록, 중복 예외, 차량 목록 조회
 
 ### 1. 현재까지 구현한 범위

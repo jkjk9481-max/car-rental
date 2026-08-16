@@ -37,14 +37,20 @@ public class Reservation {
     private ReservationStatus status;
 
     @Column(nullable = false)
+    private Long totalPrice;
+
+    @Column(nullable = false)
     private LocalDateTime createdAt;
 
-    public Reservation(User user, Vehicle vehicle, LocalDateTime startAt, LocalDateTime endAt) {
+
+
+    public Reservation(User user, Vehicle vehicle, LocalDateTime startAt, LocalDateTime endAt , Long totalPrice) {
         this.user = user;
         this.vehicle = vehicle;
         this.startAt = startAt;
         this.endAt = endAt;
         this.status = ReservationStatus.RESERVED;
+        this.totalPrice = totalPrice;
         this.createdAt = LocalDateTime.now();
     }
 

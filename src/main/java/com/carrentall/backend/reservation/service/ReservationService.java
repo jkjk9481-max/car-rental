@@ -8,6 +8,7 @@ import com.carrentall.backend.reservation.exception.*;
 import com.carrentall.backend.reservation.repository.ReservationRepository;
 import com.carrentall.backend.user.entity.User;
 import com.carrentall.backend.user.repository.UserRepository;
+import com.carrentall.backend.vehicle.entity.RentalType;
 import com.carrentall.backend.vehicle.entity.Vehicle;
 import com.carrentall.backend.vehicle.entity.VehicleStatus;
 import com.carrentall.backend.vehicle.exception.VehicleNotFoundException;
@@ -15,6 +16,7 @@ import com.carrentall.backend.vehicle.repository.VehicleRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -39,6 +41,7 @@ public class ReservationService {
                 reservation.getStartAt(),
                 reservation.getEndAt(),
                 reservation.getStatus(),
+                reservation.getTotalPrice(),
                 reservation.getCreatedAt()
         );
     }
@@ -70,11 +73,14 @@ public class ReservationService {
         //     Reservation 객체를 만든다
         boolean hasConflict = reservationRepository.existsByVehicleAndStatusAndStartAtLessThanAndEndAtGreaterThan(vehicle , ReservationStatus.RESERVED , request.getEndAt(), request.getStartAt());
         //  DB에서 같은 차량이고 상태가 RESERVED이면서, 기존 시작 시간이 새 종료 시간보다 빠르고 기존 종료 시간이 새 시작 시간보다 늦은 예약이 존재하는지 확인하여 그 결과를 hasConflict에 저장한다
+        //  request.getEndAt(),   // 기존 startAt < 새 endAt
+        //  request.getStartAt()  // 기존 endAt > 새 startAt
         if(hasConflict){
             throw new ReservationTimeConflictException("이미 해당 시간에 예약된 차량입니다");
         }
 
-        Reservation reservation = new Reservation(user , vehicle , request.getStartAt() , request.getEndAt());
+        Long totalPrice = calculateTotalPrice(vehicle , request.getStartAt() , request.getEndAt());
+        Reservation reservation = new Reservation(user , vehicle , request.getStartAt() , request.getEndAt() , totalPrice);
         reservationRepository.save(reservation);
 
         return toResponse(reservation);
@@ -147,6 +153,24 @@ public class ReservationService {
         //  → 차량 상태 변경
         //  → 트랜잭션 정상 종료
         //  → DB 반영
+    }
+
+    // 예약 금액
+    private Long calculateTotalPrice(Vehicle vehicle , LocalDateTime startAt, LocalDateTime endAt){
+        Duration duration = Duration.between(startAt, endAt); // 전체 예약 기간 구하기
+        // 차량의 RentalType 확인하기
+        if(RentalType.CAR_SHARING == vehicle.getRentalType()){
+            Long hours = (duration.getSeconds() + 3599) / 3600;
+            Long totalPrice = hours * vehicle.getHourlyRate();
+            return totalPrice;
+        }
+        if(RentalType.RENT_A_CAR == vehicle.getRentalType()){
+            long days = (duration.getSeconds() + 86399) / 86400;
+            long totalPrice = days * vehicle.getDailyRate();
+            return totalPrice;
+        }
+
+        throw new IllegalArgumentException("지원하지 않는 대여 유형입니다");
     }
 
 

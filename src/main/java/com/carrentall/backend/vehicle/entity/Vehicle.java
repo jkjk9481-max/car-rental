@@ -22,11 +22,11 @@ public class Vehicle {
 
     // 시간당 요금
     @Column(nullable = false)
-    private int hourlyRate;
+    private Long hourlyRate;
 
     // 일일 요금
     @Column(nullable = false)
-    private int dailyRate;
+    private Long dailyRate;
 
     // 차량 번호판 번호
     @Column(nullable = false, unique = true) // unique 제약이 없다면 차량 중복이 등록될 수 있습니다
@@ -57,7 +57,7 @@ public class Vehicle {
     @Column(nullable = false , updatable = false)
     private LocalDateTime createdAt;
 
-    public Vehicle(String manufacturer, int hourlyRate , int dailyRate , String vehicleNumber, String modelName, RentalType rentalType, FuelType fuelType) {
+    public Vehicle(String manufacturer, Long hourlyRate , Long dailyRate , String vehicleNumber, String modelName, RentalType rentalType, FuelType fuelType) {
         this.manufacturer = manufacturer;
         this.hourlyRate = hourlyRate;
         this.dailyRate = dailyRate;
@@ -78,7 +78,7 @@ public class Vehicle {
     // 차량 기본 정보를 수정한다
     public void updateInfo(String manufacturer, String modelName, String vehicleNumber,
                            RentalType rentalType, FuelType fuelType,
-                           int hourlyRate, int dailyRate) {
+                           Long hourlyRate, Long dailyRate) {
         this.manufacturer = manufacturer;
         this.modelName = modelName;
         this.vehicleNumber = vehicleNumber;
