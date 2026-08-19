@@ -17,8 +17,8 @@ public class VehicleResponse {
     private RentalType rentalType;
     private FuelType fuelType;
     private VehicleStatus status;
-    private Integer hourlyRate;
-    private Integer dailyRate;
+    private Long hourlyRate;
+    private Long dailyRate;
 
     public VehicleResponse(Long id, String manufacturer, String modelName, String vehicleNumber, RentalType rentalType, FuelType fuelType, VehicleStatus status, Integer hourlyRate, Integer dailyRate) {
         this.id = id;

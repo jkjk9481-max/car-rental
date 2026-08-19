@@ -13,8 +13,11 @@ import com.carrentall.backend.reservation.exception.ReservationNotFoundException
 import com.carrentall.backend.reservation.repository.ReservationRepository;
 import com.carrentall.backend.user.entity.User;
 import com.carrentall.backend.user.repository.UserRepository;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
 
 @Service
 public class PaymentService {
@@ -60,5 +63,16 @@ public class PaymentService {
         return toResponse(payment);
     }
 
+    @Transactional(readOnly = true)
+    public List<PaymentResponse> getMyPayments(String email){
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new UsernameNotFoundException("사용자가 존재하지 않습니다."));
+
+       return paymentRepository.findByReservation_User(user)
+                .stream()
+                .map(this::toResponse)
+                .toList();
+       // 이메일로 현재 사용자를 찾고, 그 사용자의 예약에 연결된 결제들을 조회한 뒤, 각 결제를 PaymentResponse로 변환한다
+    }
 
 }

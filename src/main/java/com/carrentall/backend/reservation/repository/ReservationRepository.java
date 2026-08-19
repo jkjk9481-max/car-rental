@@ -1,5 +1,6 @@
 package com.carrentall.backend.reservation.repository;
 
+import com.carrentall.backend.payment.entity.Payment;
 import com.carrentall.backend.reservation.entity.Reservation;
 import com.carrentall.backend.reservation.entity.ReservationStatus;
 import com.carrentall.backend.user.entity.User;
@@ -23,4 +24,6 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long> 
             LocalDateTime endAt,
             LocalDateTime startAt
     );
+
+
 }

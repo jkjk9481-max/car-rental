@@ -24,10 +24,10 @@ public class VehicleUpdateRequest {
     private FuelType fuelType;
     @NotNull
     @Positive
-    private Integer hourlyRate;
+    private Long hourlyRate;
     @NotNull
     @Positive
-    private Integer dailyRate;
+    private Long dailyRate;
 
 
 }

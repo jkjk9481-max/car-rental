@@ -1,5 +1,6 @@
 package com.carrentall.backend.reservation.service;
 
+import com.carrentall.backend.payment.dto.PaymentResponse;
 import com.carrentall.backend.reservation.dto.ReservationCreateRequest;
 import com.carrentall.backend.reservation.dto.ReservationResponse;
 import com.carrentall.backend.reservation.entity.Reservation;
@@ -181,6 +182,7 @@ public class ReservationService {
 
         throw new IllegalArgumentException("지원하지 않는 대여 유형입니다");
     }
+
 
 
 
