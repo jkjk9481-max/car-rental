@@ -1,5 +1,6 @@
 package com.carrentall.backend.payment.entity;
 
+import com.carrentall.backend.payment.exception.PaymentCannotCancelException;
 import com.carrentall.backend.reservation.entity.Reservation;
 import jakarta.persistence.*;
 import lombok.Getter;
@@ -39,5 +40,12 @@ public class Payment {
         this.amount = amount;
         this.status = PaymentStatus.PAID;
         this.paidAt = LocalDateTime.now();
+    }
+
+    public void cancel(){
+        if(!PaymentStatus.PAID.equals(status)){
+            throw new PaymentCannotCancelException("결제 완료 상태에서만 취소할 수 있습니다.");
+        }
+        this.status = PaymentStatus.CANCELED;
     }
 }

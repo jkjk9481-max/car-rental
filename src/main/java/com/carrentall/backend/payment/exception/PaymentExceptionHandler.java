@@ -21,4 +21,18 @@ public class PaymentExceptionHandler {
         String message = e.getMessage();
         return new ResponseEntity<>(message, status);
     }
+
+    @ExceptionHandler(PaymentNotFoundException.class)
+    public ResponseEntity<String> handlePaymentNotFoundException(PaymentNotFoundException e) {
+        HttpStatus status = HttpStatus.NOT_FOUND;
+        String message = e.getMessage();
+        return new ResponseEntity<>(message, status);
+    }
+
+    @ExceptionHandler(PaymentCannotCancelException.class)
+    public ResponseEntity<String> handlePaymentCannotCancelException(PaymentCannotCancelException e) {
+        HttpStatus status = HttpStatus.CONFLICT;
+        String message = e.getMessage();
+        return new ResponseEntity<>(message, status);
+    }
 }

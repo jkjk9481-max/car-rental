@@ -25,8 +25,20 @@ public class PaymentController {
     }
 
     @GetMapping("/me")
-    public List<PaymentResponse> getMyReservation(Authentication authentication) {
+    public List<PaymentResponse> getMyPayments(Authentication authentication) {
         String email =  authentication.getName();
         return paymentService.getMyPayments(email);
+    }
+
+    @GetMapping("/{paymentId}")
+    public PaymentResponse getPayment(@PathVariable Long paymentId, Authentication authentication) {
+        String email =  authentication.getName();
+        return paymentService.getMyPayment(paymentId, email);
+    }
+
+    @PatchMapping("/{paymentId}/cancel")
+    public PaymentResponse cancelPayment(@PathVariable Long paymentId, Authentication authentication) {
+        String email =  authentication.getName();
+        return paymentService.cancelPayment(paymentId, email);
     }
 }
