@@ -1,6 +1,6 @@
 package com.carrentall.backend.reservation.service;
 
-import com.carrentall.backend.payment.dto.PaymentResponse;
+
 import com.carrentall.backend.reservation.dto.ReservationCreateRequest;
 import com.carrentall.backend.reservation.dto.ReservationResponse;
 import com.carrentall.backend.reservation.entity.Reservation;
@@ -182,6 +182,20 @@ public class ReservationService {
 
         throw new IllegalArgumentException("지원하지 않는 대여 유형입니다");
     }
+
+    @Transactional(readOnly = true)
+    public List<ReservationResponse> getAllReservationsForAdmin(){
+        return reservationRepository.findAll()
+                .stream()
+                .map(this::toResponse)
+                .toList();
+        //  1. reservationRepository.findAll()로 전체 예약 조회
+        //  2. 각각의 Reservation을 ReservationResponse로 변환
+        //  3. List<ReservationResponse> 반환
+    }
+
+
+
 
 
 

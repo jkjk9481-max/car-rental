@@ -83,6 +83,4 @@ public class ReservationController {
         //  → reservationService.cancelReservation(reservationId, email)
         //  → ReservationResponse 반환
     }
-
-
 }

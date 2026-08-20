@@ -125,4 +125,12 @@ public class PaymentService {
         //  → 예약 취소
         //  → 취소된 결제 정보를 응답
     }
+
+    @Transactional(readOnly = true)
+    public List<PaymentResponse> getAllPaymentsForAdmin(){
+        return paymentRepository.findAll()
+                .stream()
+                .map(this::toResponse)
+                .toList();
+    }
 }
