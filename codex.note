@@ -1,5 +1,322 @@
 # Car Rental / Car Sharing Project Note
 
+# 2026-08-20 백엔드 구현 현황 및 프론트엔드 인수인계
+
+## 1. 현재 단계
+
+카셰어링·렌터카 서비스의 기본 백엔드 구성을 완료했다. 현재 구현 범위는 회원 인증, 차량 관리, 사용자 예약, Mock 결제, 관리자 전체 조회, 관리자 API 권한 제한이다.
+
+다음 개발 단계는 프론트엔드 화면 구성과 API 연동이다. 결제는 실제 PG사와 연동하지 않은 Mock 결제이며, 관리자 정산·실제 환불·결제 실패 복구 등은 아직 구현하지 않았다.
+
+## 2. 인증 및 권한
+
+### 인증 방식
+
+- 회원가입과 로그인 API는 인증 없이 접근할 수 있다.
+- 로그인 성공 시 JWT를 발급한다.
+- JWT의 subject에는 사용자 email이 들어간다.
+- JWT의 `role` claim에는 `USER` 또는 `ADMIN`이 들어간다.
+- 클라이언트는 인증이 필요한 요청에 `Authorization: Bearer {token}` 헤더를 보내야 한다.
+- JWT 필터는 email과 role을 토큰에서 읽어 Spring Security의 `SecurityContext`에 인증 정보를 등록한다.
+
+### Spring Security 권한 형식
+
+JWT 필터는 role을 다음과 같이 변환한다.
+
+```text
+USER  -> ROLE_USER
+ADMIN -> ROLE_ADMIN
+```
+
+`SecurityConfig`의 접근 규칙은 다음 순서로 구성되어 있다.
+
+```text
+/api/auth/signup, /api/auth/login -> permitAll
+/api/admin/**                     -> hasRole("ADMIN")
+나머지 요청                         -> authenticated
+```
+
+따라서 일반 USER가 관리자 API를 호출하면 `403 Forbidden`, ADMIN은 정상 접근한다. 로그인하지 않은 요청은 보호된 API에 접근할 수 없다.
+
+DB에서 사용자의 role을 `USER`에서 `ADMIN`으로 변경했다면 반드시 다시 로그인해 새 JWT를 발급받아야 한다. 기존 JWT에는 발급 당시의 `USER` role이 그대로 남아 있기 때문이다.
+
+## 3. 구현된 기능
+
+### 사용자
+
+- 회원가입
+- 로그인
+- JWT 인증
+
+### 차량
+
+- 차량 등록, 목록 조회, 상세 조회, 수정, 삭제
+- 차량 상태 변경
+- 차량 번호 중복 검사
+
+### 예약
+
+- 예약 생성
+- 로그인 사용자의 예약 목록 조회
+- 예약 상세 조회
+- 예약 취소
+- 예약 시간 기본 검증 및 겹침 검증
+- 대여 시간과 요금 정책에 따른 예약 금액 계산
+
+### Mock 결제
+
+- 예약에 대한 Mock 결제 생성
+- 로그인 사용자의 결제 목록 조회
+- 결제 상세 조회
+- 결제 취소
+- 결제 취소 시 연결된 예약도 함께 취소
+
+### 관리자
+
+- 전체 예약 목록 조회
+- 전체 결제 목록 조회
+- `/api/admin/**` 경로를 `ROLE_ADMIN` 사용자에게만 허용
+
+## 4. 주요 API 정리
+
+아래 목록은 현재 구현된 주요 경로다. 프론트 연동 전 실제 Controller의 request DTO 필드와 응답 DTO 필드를 최종 기준으로 확인한다.
+
+### 인증 API
+
+```http
+POST /api/auth/signup
+POST /api/auth/login
+```
+
+회원가입과 로그인은 토큰 없이 호출할 수 있다. 로그인 응답으로 받은 JWT를 이후 보호된 요청의 Bearer 토큰으로 사용한다.
+
+### 차량 API
+
+```http
+POST   /api/vehicles
+GET    /api/vehicles
+GET    /api/vehicles/{vehicleId}
+PUT 또는 PATCH /api/vehicles/{vehicleId}
+DELETE /api/vehicles/{vehicleId}
+PATCH  /api/vehicles/{vehicleId}/status
+```
+
+차량 수정 경로와 HTTP 메서드는 프론트 연동 시 현재 `VehicleController` 선언을 최종 기준으로 삼는다.
+
+### 사용자 예약 API
+
+```http
+POST  /api/reservations
+GET   /api/reservations/my
+GET   /api/reservations/{reservationId}
+PATCH /api/reservations/{reservationId}/cancel
+```
+
+예약 생성 시 JWT email로 현재 사용자를 조회한다. 사용자는 자신의 예약 상세만 조회하고 자신의 예약만 취소할 수 있다.
+
+### 사용자 결제 API
+
+```http
+POST  /api/payments/reservations/{reservationId}
+GET   /api/payments/me
+GET   /api/payments/{paymentId}
+PATCH /api/payments/{paymentId}/cancel
+```
+
+결제 목록과 상세 조회 및 취소는 현재 로그인 사용자의 소유권을 검사한다. `Payment`에 `User`가 직접 없으므로 `Payment -> Reservation -> User` 관계를 통해 결제 소유자를 확인한다.
+
+### 관리자 API
+
+```http
+GET /api/admin/reservations
+GET /api/admin/payments
+```
+
+관리자 API는 특정 사용자 email이나 ID로 필터링하지 않고 Repository의 `findAll()` 결과를 Response DTO 목록으로 변환해 반환한다. 두 경로는 `ROLE_ADMIN` 권한이 필요하다.
+
+## 5. 예약 도메인 규칙
+
+### 예약 시간 검증
+
+- 시작 시간은 종료 시간보다 반드시 빨라야 한다.
+- 시작 시간과 종료 시간이 같으면 예약할 수 없다.
+- 시작 시간이 종료 시간보다 늦으면 예약할 수 없다.
+- 과거 시간으로 예약을 시작할 수 없다.
+
+### 시간 겹침 검증
+
+같은 차량에 대해 기존 `RESERVED` 예약과 다음 조건이 모두 맞으면 시간이 겹친다.
+
+```text
+기존 예약 startAt < 새 예약 endAt
+AND
+기존 예약 endAt > 새 예약 startAt
+```
+
+취소된 `CANCELED` 예약은 더 이상 시간대를 점유하지 않으므로 겹침 검사에서 제외한다. 기존 예약의 종료 시각과 새 예약의 시작 시각이 정확히 같은 경우는 겹치지 않는 것으로 처리한다.
+
+### 예약 소유권과 금액
+
+예약 상세 조회와 예약 취소에서는 JWT email로 현재 `User`를 조회한 다음 예약의 `User.id`와 비교한다. 서로 다르면 다른 사용자의 예약이므로 접근을 거부한다.
+
+예약 생성 시 대여 시간과 차량의 요금 정보를 바탕으로 총금액을 계산하고 `Reservation.totalPrice`에 저장한다. 결제 금액은 클라이언트가 임의로 보내는 값을 신뢰하지 않고 예약에 저장된 `totalPrice`를 사용한다.
+
+## 6. Mock 결제 도메인 규칙
+
+### 결제 생성
+
+- 존재하는 예약만 결제할 수 있다.
+- 현재 로그인 사용자가 소유한 예약만 결제할 수 있다.
+- 결제 가능한 예약 상태인지 확인한다.
+- 같은 예약에 `PAID` 결제가 이미 있으면 중복 결제를 막는다.
+- 결제 금액은 `Reservation.totalPrice`를 사용한다.
+- Mock 결제 생성 직후 `PaymentStatus.PAID`로 저장한다.
+
+### 결제 상태와 취소
+
+```text
+상태: READY, PAID, CANCELED, FAILED
+결제 생성: PAID
+결제 취소: PAID -> CANCELED
+```
+
+`Payment.cancel()`은 현재 상태가 `PAID`일 때만 상태를 `CANCELED`로 변경한다. `READY`, `FAILED`, 이미 `CANCELED`인 결제는 `PaymentCannotCancelException`을 발생시킨다.
+
+서비스의 결제 취소 흐름은 다음과 같다.
+
+```text
+JWT email로 User 조회
+-> paymentId로 Payment 조회
+-> Payment -> Reservation -> User로 소유권 검사
+-> payment.cancel()
+-> 연결된 reservation.cancel()
+-> PaymentResponse 반환
+```
+
+결제와 예약 상태 변경은 하나의 `@Transactional` 메서드 안에서 처리한다. 정상 종료 시 JPA Dirty Checking으로 두 상태가 DB에 반영되고, 처리 중 예외가 발생하면 함께 롤백된다. 조회한 영속 엔티티를 변경한 뒤 별도의 `save()` 호출이 필수는 아니다.
+
+Mock 정책상 결제를 취소하면 연결된 예약도 `CANCELED`로 변경한다. 실제 PG 환불 연동 시에는 환불 성공 여부, 취소 수수료, 부분 환불, 실패 복구 등을 고려해 정책을 다시 설계해야 한다.
+
+## 7. 관리자 조회 구조
+
+관리자 전체 예약 조회는 일반 사용자의 내 예약 조회와 다르게 현재 사용자 기준으로 필터링하지 않는다.
+
+```text
+ReservationRepository.findAll()
+-> 각 Reservation을 기존 toResponse()로 변환
+-> List<ReservationResponse> 반환
+```
+
+관리자 전체 결제 조회도 동일한 방향으로 전체 `Payment`를 조회해 `PaymentResponse` 목록으로 반환한다.
+
+일반 사용자 Controller와 관리자 Controller는 목적과 권한이 다르므로 분리했다. 관리자 Controller는 `/api/admin/...` 경로를 사용하며 Spring Security에서 해당 경로 전체를 `hasRole("ADMIN")`으로 보호한다.
+
+## 8. 주요 예외와 HTTP 상태
+
+현재 도메인별 전용 예외와 ExceptionHandler를 사용해 오류 상황을 HTTP 응답으로 변환한다.
+
+```text
+리소스를 찾을 수 없음                 -> 404 Not Found
+다른 사용자의 예약·결제 접근          -> 403 Forbidden
+예약 시간 자체가 잘못됨               -> 400 Bad Request
+예약 시간 겹침                       -> 409 Conflict
+이미 결제된 예약                      -> 409 Conflict
+결제할 수 없는 예약 상태              -> 409 Conflict
+PAID가 아니어서 결제를 취소할 수 없음  -> 409 Conflict
+```
+
+프론트에서는 성공 응답만 처리하지 말고 최소한 `400`, `401`, `403`, `404`, `409`를 구분해 사용자 메시지를 표시해야 한다. 현재 일부 예외 응답은 구조화된 JSON 객체가 아니라 문자열 메시지일 수 있으므로 실제 응답 형태를 확인한 뒤 공통 에러 처리기를 작성한다.
+
+## 9. 프론트엔드 연동 시 인증 처리
+
+- 로그인 성공 후 받은 JWT를 프론트의 인증 상태에 보관한다.
+- 보호된 API 요청마다 `Authorization: Bearer {token}`을 붙인다.
+- 토큰이 없거나 만료된 경우 로그인 화면으로 이동시키는 처리가 필요하다.
+- ADMIN 화면과 메뉴는 로그인 사용자 role에 따라 노출할 수 있다.
+- 화면에서 관리자 메뉴를 숨기는 것만으로 보안이 완성되는 것은 아니며, 실제 보안은 백엔드의 `/api/admin/**` 권한 검사로 보장한다.
+
+```text
+비로그인 -> 회원가입·로그인만 접근 가능, 보호된 API 접근 실패
+USER     -> 일반 API 접근 가능, 관리자 API는 403 Forbidden
+ADMIN    -> 일반 API 및 관리자 전체 예약·결제 조회 가능
+```
+
+## 10. 프론트엔드 화면 구성 제안
+
+1. 회원가입 화면
+2. 로그인 화면
+3. 차량 목록 화면
+4. 차량 상세 화면
+5. 예약 생성 화면
+6. 내 예약 목록 화면
+7. 예약 상세 화면 및 예약 취소 버튼
+8. Mock 결제 실행 화면 또는 버튼
+9. 내 결제 목록 화면
+10. 결제 상세 화면 및 결제 취소 버튼
+11. 관리자 전체 예약 목록 화면
+12. 관리자 전체 결제 목록 화면
+
+관리자 화면은 USER 토큰으로 API를 호출했을 때 발생하는 `403`도 처리해야 한다.
+
+## 11. 프론트 연동 권장 순서
+
+```text
+1. 로그인 및 JWT 저장
+2. 공통 API 클라이언트에 Bearer 토큰 자동 첨부
+3. 차량 목록·상세 조회 연결
+4. 예약 생성 연결
+5. 내 예약 목록·상세·취소 연결
+6. Mock 결제 연결
+7. 내 결제 목록·상세·취소 연결
+8. role 기반 관리자 라우트와 메뉴 구성
+9. 관리자 전체 예약·결제 조회 연결
+10. 공통 로딩·빈 목록·에러 처리 정리
+```
+
+## 12. 프론트 연동 전 확인할 사항
+
+- 각 Request DTO의 정확한 JSON 필드명
+- 날짜·시간 필드의 직렬화 형식
+- `ReservationResponse`, `PaymentResponse`, `VehicleResponse`의 실제 필드 구성
+- 로그인 응답에서 JWT가 들어 있는 필드명
+- 빈 목록이 `[]`로 반환되는지
+- 예외 응답이 문자열인지 JSON 객체인지
+- CORS 설정이 프론트 개발 서버 주소를 허용하는지
+- 토큰이 없을 때의 실제 HTTP 상태
+- USER 토큰으로 관리자 API 호출 시 실제 `403`이 반환되는지
+- ADMIN role 변경 후 재로그인한 새 토큰으로 관리자 API가 `200`을 반환하는지
+- 결제 취소 후 결제와 예약 상태가 모두 `CANCELED`인지
+
+## 13. 아직 구현하지 않은 범위
+
+- 실제 PG사 결제 승인 및 환불 연동
+- 결제 실패 처리와 재시도
+- 부분 취소 및 부분 환불
+- 취소 수수료 정책
+- 관리자 정산
+- 관리자 예약·결제 상태 변경
+- Refresh Token과 토큰 재발급 정책
+- 예약·결제 목록 페이징, 정렬, 검색
+- 운영 환경 수준의 감사 로그 및 알림
+
+## 14. 백엔드 작업 마무리 상태
+
+현재 백엔드는 프론트엔드에서 기본 사용자 흐름과 관리자 조회 흐름을 연결해 볼 수 있는 수준으로 구성됐다.
+
+```text
+회원가입/로그인
+-> JWT 인증
+-> 차량 조회
+-> 예약 생성 및 조회
+-> Mock 결제 및 조회
+-> 예약/결제 취소
+-> ADMIN 전체 예약/결제 조회
+```
+
+프론트 작업을 시작하기 전에 Postman으로 USER와 ADMIN 계정의 주요 성공·실패 시나리오를 한 번씩 확인한다. 실제 서비스 수준으로 확장할 때는 PG 연동, 결제 원장과 환불 이력, 동시성 제어, 페이징, 구조화된 공통 오류 응답을 추가로 설계해야 한다.
+
+---
+
 # 2026-08-15 학습 기록: 예약 기본 시간 검증과 예약 시간 겹침 검증
 
 ## 1. 이번 단계에서 구현한 범위

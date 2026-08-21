@@ -53,10 +53,9 @@ public class AuthService {
          // DB에서 찾은 사용자의 이메일을 가져옴 , DB에 저장된 사용자의 권한을 가져옴
         // 이메일과 권한정보를 넣어 JWT를 생성함
 
-        LoginResponse response = new LoginResponse(token);
         // 문자열 token -> LoginResponse 상자에 넣기 -> response 변수에 보관
 
-        return response;
+        return new LoginResponse(token);
         // Request와 Response는 데이터를 담는 상자이고 , Spring이 상자에 넣고 꺼내면서 변환해 준다고 이해
     }
 

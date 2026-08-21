@@ -8,6 +8,9 @@ group = 'com.carrentall'
 version = '0.0.1-SNAPSHOT'
 description = 'car-rental'
 
+// OneDrive 동기화 경로에서 Gradle 출력 파일이 잠기는 문제를 피한다.
+layout.buildDirectory = file("${System.getProperty('java.io.tmpdir')}/car-rental-gradle-build")
+
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(17)

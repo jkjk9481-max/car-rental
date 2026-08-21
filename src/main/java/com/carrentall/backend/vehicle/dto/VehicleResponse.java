@@ -20,7 +20,7 @@ public class VehicleResponse {
     private Long hourlyRate;
     private Long dailyRate;
 
-    public VehicleResponse(Long id, String manufacturer, String modelName, String vehicleNumber, RentalType rentalType, FuelType fuelType, VehicleStatus status, Integer hourlyRate, Integer dailyRate) {
+    public VehicleResponse(Long id, String manufacturer, String modelName, String vehicleNumber, RentalType rentalType, FuelType fuelType, VehicleStatus status, Long hourlyRate, Long dailyRate) {
         this.id = id;
         this.manufacturer = manufacturer;
         this.modelName = modelName;
