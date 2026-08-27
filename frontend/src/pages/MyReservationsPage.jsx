@@ -166,18 +166,29 @@ function MyReservationsPage() {
 
                         {/* RESERVED 상태일 때만 취소 버튼 표시 */}
                         {reservation.status === "RESERVED" && (
-                            <button
-                                type="button"
-                                onClick={() =>
-                                    handleCancelReservation(reservation.reservationId)
-                                }
-                            >
-                                예약 취소
-                            </button>
-                        )}
+                            <>
+                                {/* 예약 취소 버튼 */}
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        handleCancelReservation(reservation.reservationId)
+                                    }
+                                >
+                                    예약 취소
+                                </button>
 
-                        {/* 다음 단계에서 여기에 결제하기 버튼을 붙일 예정 */}
-                        {/* RESERVED 상태일 때 결제 가능 */}
+                                {/* 결제 페이지로 이동하는 버튼 */}
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        navigate(`/payments/reservations/${reservation.reservationId}`)
+                                    }
+                                >
+                                    결제하기
+                                </button>
+                            </>
+                            // 예약 상태가 RESERVED이면 예약취소와 결제하기 버튼을 보여준다
+                        )}
                     </div>
                 ))}
             </div>

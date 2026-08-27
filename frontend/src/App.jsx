@@ -5,6 +5,10 @@ import VehicleListPage from "./pages/VehicleListPage";
 import VehicleDetailPage from "./pages/VehicleDetailPage";
 import ReservationCreatePage from "./pages/ReservationCreatePage";
 import MyReservationsPage from "./pages/MyReservationsPage";
+import PaymentCreatePage from "./pages/PaymentCreatePage";
+import MyPaymentsPage from "./pages/MyPaymentsPage";
+import AdminReservationsPage from "./pages/AdminReservationsPage";
+import AdminPaymentsPage from "./pages/AdminPaymentsPage";
 
 function App() {
     return (
@@ -15,9 +19,29 @@ function App() {
                 <Route path="/vehicles" element={<VehicleListPage />} />
                 <Route path="/vehicles/:vehicleId" element={<VehicleDetailPage />} />
                 <Route path="/vehicles/:vehicleId/reservation" element={<ReservationCreatePage />} />
-
                 {/* 내 예약 목록 페이지 */}
                 <Route path="/reservations/my" element={<MyReservationsPage />} />
+
+                {/* 결제 생성 페이지 */}
+                {/* 예: /payments/reservations/1 */}
+                <Route
+                    path="/payments/reservations/:reservationId"
+                    element={<PaymentCreatePage />}
+                />
+                {/* 내 결제 목록 페이지 */}
+                <Route path="/payments/my" element={<MyPaymentsPage />} />
+
+                {/* 관리자 전체 예약 */}
+                <Route
+                    path="/admin/reservations"
+                    element={<AdminReservationsPage />}
+                />
+
+                {/* 관리자 전체 결제 */}
+                <Route
+                    path="/admin/payments"
+                    element={<AdminPaymentsPage />}
+                />
             </Routes>
         </BrowserRouter>
     );
