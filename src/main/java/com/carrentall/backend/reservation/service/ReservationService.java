@@ -62,9 +62,11 @@ public class ReservationService {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("예약할 수 없는 사용자입니다."));
 
-        Vehicle vehicle = vehicleRepository.findById(request.getVehicleId())
+        Vehicle vehicle = vehicleRepository.findWithLockById(request.getVehicleId())
                 .orElseThrow(() -> new VehicleNotFoundException("해당 차량이 존재하지 않습니다."));
 
+        // 예약 생성
+        //→ 동시성 문제 때문에 Lock 필요
         if(VehicleStatus.AVAILABLE != vehicle.getStatus()){
             // 차량 상태가 AVAILABLE이 아니면 예약할 수 없는 차량이다
             throw new VehicleNotAvailableException("예약할 수 없는 차량입니다");
@@ -84,11 +86,12 @@ public class ReservationService {
         Reservation reservation = new Reservation(user , vehicle , request.getStartAt() , request.getEndAt() , totalPrice);
         reservationRepository.save(reservation);
 
-        return toResponse(reservation);
+        throw new RuntimeException("롤백 테스트");
+
+        // return toResponse(reservation);
     }
 
-    @Transactional(readOnly = true) // 데이터를 변경하지 않고 조회만 하는 작업 ( 조회만 할떄 많이 사용함)
-    // 저장 * 수정 * 삭제는 -> 붙히지않는다
+    @Transactional(readOnly = true) // 조회
     public List<ReservationResponse> getMyReservations(String email){
         // email로 User 조회
         User user = userRepository.findByEmail(email)
@@ -148,6 +151,7 @@ public class ReservationService {
 
         reservation.cancel();
         return toResponse(reservation);
+        // 영속성 컨텍스트(Persistence Context) + Dirty Checking(변경 감지)
 
         //  예약 취소 성공
         //  → 예약 상태 변경
