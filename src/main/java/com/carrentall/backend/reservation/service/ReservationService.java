@@ -86,9 +86,7 @@ public class ReservationService {
         Reservation reservation = new Reservation(user , vehicle , request.getStartAt() , request.getEndAt() , totalPrice);
         reservationRepository.save(reservation);
 
-        throw new RuntimeException("롤백 테스트");
-
-        // return toResponse(reservation);
+        return toResponse(reservation);
     }
 
     @Transactional(readOnly = true) // 조회

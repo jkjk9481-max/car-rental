@@ -1,5 +1,7 @@
 package com.carrentall.backend.vehicle.service;
 
+import com.carrentall.backend.carzone.entity.CarZone;
+import com.carrentall.backend.carzone.repository.CarZoneRepository;
 import com.carrentall.backend.vehicle.dto.VehicleCreateRequest;
 import com.carrentall.backend.vehicle.dto.VehicleResponse;
 import com.carrentall.backend.vehicle.dto.VehicleStatusUpdateRequest;
@@ -20,9 +22,11 @@ import java.util.List;
 public class VehicleService {
 
     private final VehicleRepository vehicleRepository;
+    private final CarZoneRepository carZoneRepository;
 
-    public VehicleService(VehicleRepository vehicleRepository) {
+    public VehicleService(VehicleRepository vehicleRepository ,  CarZoneRepository carZoneRepository) {
         this.vehicleRepository = vehicleRepository;
+        this.carZoneRepository = carZoneRepository;
     }
 
     private VehicleResponse toResponse(Vehicle vehicle){
@@ -34,6 +38,12 @@ public class VehicleService {
         // 1.차량번호 중복 확인
         boolean exists =  vehicleRepository.existsByVehicleNumber(request.getVehicleNumber());
 
+        CarZone carZone = carZoneRepository.findById(request.getCarZoneId())
+                // request.getCarZoneId()
+                //→ Long 타입
+                //→ "몇 번 카존인가?"
+                .orElseThrow(() -> new RuntimeException("이 장소는 예약존이 아닙니다."));
+
         // 2.중복이면 예외발생
         if(exists){
             throw new DuplicateVehicleNumberException("중복된 차량 번호 입니다.");
@@ -41,7 +51,7 @@ public class VehicleService {
         // 3.Vehicle 객체 생성
         // VehicleRepository는 Vehicle만 저장할 수 있으므로, Request에서 값을 꺼내 유효한 Vehicle 객체를 생성한 다음 그 Vehicle을 저장합니다.
         // Request는 사용자의 차량 등록 신청서이고, Vehicle은 그 신청서의 값을 바탕으로 서버 규칙까지 적용해 만든 실제 DB 저장 대상입니다.
-        Vehicle vehicle = new Vehicle(request.getManufacturer() , request.getHourlyRate() , request.getDailyRate() , request.getVehicleNumber() , request.getModelName() , request.getRentalType() , request.getFuelType());
+        Vehicle vehicle = new Vehicle(request.getManufacturer() , request.getHourlyRate() , request.getDailyRate() , request.getVehicleNumber() , carZone  , request.getModelName() , request.getRentalType() , request.getFuelType());
 
         vehicleRepository.save(vehicle);
     }
@@ -139,7 +149,7 @@ public class VehicleService {
 
     // 복합 필터 검색
     public List<VehicleResponse> searchVehicles(VehicleStatus status , FuelType fuelType , RentalType rentalType) {
-        List<VehicleResponse> vehicles = vehicleRepository.findByStatusAndFuelTypeAndRentalType(status, fuelType, rentalType)
+        List<VehicleResponse> vehicles = vehicleRepository.searchVehicles(status, fuelType, rentalType)
                 .stream()
                 .map(this::toResponse)
                 .toList();
@@ -147,7 +157,7 @@ public class VehicleService {
         return vehicles;
 
         //  1. status, fuelType, rentalType 조건을 받음
-        //  2. Repository에서 세 조건이 모두 일치하는 차량 조회
+        //  2. 전달된 검색조건 중 null이 아닌 조건만 적용하여 차량을 조회
         //  3. Vehicle Entity 목록을 VehicleResponse 목록으로 변환
         //  4. 클라이언트에게 반환
     }

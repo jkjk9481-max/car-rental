@@ -1,5 +1,6 @@
 package com.carrentall.backend.vehicle.dto;
 
+import com.carrentall.backend.carzone.entity.CarZone;
 import com.carrentall.backend.vehicle.entity.FuelType;
 import com.carrentall.backend.vehicle.entity.RentalType;
 import jakarta.validation.constraints.NotBlank;
@@ -24,6 +25,9 @@ public class VehicleCreateRequest {
 
     @NotBlank
     private String vehicleNumber;
+
+    @NotNull
+    private Long carZoneId;
 
     @NotNull
     private RentalType rentalType;

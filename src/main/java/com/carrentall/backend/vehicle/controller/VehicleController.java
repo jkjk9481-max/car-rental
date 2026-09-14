@@ -73,7 +73,8 @@ public class VehicleController {
     }
 
     @GetMapping("/search")
-    public List<VehicleResponse> searchVehicles(@RequestParam VehicleStatus status , @RequestParam FuelType fuelType , @RequestParam RentalType rentalType) {
+    public List<VehicleResponse> searchVehicles(@RequestParam(required = false) VehicleStatus status , @RequestParam(required = false) FuelType fuelType , @RequestParam(required = false) RentalType rentalType) {
+        // required = false -> 없어도되고 있어도 괜찮다
         return vehicleService.searchVehicles(status, fuelType, rentalType);
     }
 }

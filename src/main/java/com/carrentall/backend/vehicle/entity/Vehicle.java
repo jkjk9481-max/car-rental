@@ -1,5 +1,6 @@
 package com.carrentall.backend.vehicle.entity;
 
+import com.carrentall.backend.carzone.entity.CarZone;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -53,15 +54,23 @@ public class Vehicle {
     @Column(nullable = false)
     private VehicleStatus status;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "car_zone_id" , nullable = false)
+    // → Vehicle 테이블에서 어떤 FK 컬럼으로 CarZone과 연결할지 지정
+    // Vehicle 객체 하나는
+    //반드시 CarZone 하나를 알아야 한다
+    private CarZone carZone;
+
     // 차량 정보가 등록된 시각
     @Column(nullable = false , updatable = false)
     private LocalDateTime createdAt;
 
-    public Vehicle(String manufacturer, Long hourlyRate , Long dailyRate , String vehicleNumber, String modelName, RentalType rentalType, FuelType fuelType) {
+    public Vehicle(String manufacturer, Long hourlyRate , Long dailyRate , String vehicleNumber,  CarZone carZone , String modelName , RentalType rentalType, FuelType fuelType) {
         this.manufacturer = manufacturer;
         this.hourlyRate = hourlyRate;
         this.dailyRate = dailyRate;
         this.vehicleNumber = vehicleNumber;
+        this.carZone = carZone;
         this.modelName = modelName;
         this.rentalType = rentalType;
         this.fuelType = fuelType;
