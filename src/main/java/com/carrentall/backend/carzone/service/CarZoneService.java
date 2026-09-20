@@ -42,7 +42,12 @@ public class CarZoneService {
                 .map(this::toResponse)
                 .toList();
 
+        // DB에서 카존 목록을 조회하고, 각 카존을 응답 DTO로 변환한 뒤 목록으로 모아서, 이 메서드를 호출한 곳에 반환한다.
         return carZone;
+        // findAll()       → List<CarZone>
+        //  stream()        → Stream<CarZone>
+        //  map(toResponse) → Stream<CarZoneResponse>
+        //  toList()        → List<CarZoneResponse>
     }
 
 
