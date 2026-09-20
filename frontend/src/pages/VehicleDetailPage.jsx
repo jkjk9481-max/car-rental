@@ -167,6 +167,8 @@ function VehicleDetailPage() {
 
             {/* 차량 상세 정보 출력 */}
             <p>차량 번호: {vehicle.vehicleNumber}</p>
+            <p>대여 장소: {vehicle.carZoneName}</p>
+            <p>주소: {vehicle.carZoneAddress}</p>
             <p>대여 타입: {vehicle.rentalType}</p>
             <p>연료 타입: {vehicle.fuelType}</p>
             <p>상태: {vehicle.status}</p>

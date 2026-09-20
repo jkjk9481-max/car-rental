@@ -30,7 +30,7 @@ public class VehicleService {
     }
 
     private VehicleResponse toResponse(Vehicle vehicle){
-        return new VehicleResponse(vehicle.getId() , vehicle.getManufacturer() , vehicle.getModelName() , vehicle.getVehicleNumber() , vehicle.getRentalType() , vehicle.getFuelType() , vehicle.getStatus() , vehicle.getHourlyRate() , vehicle.getDailyRate());
+        return new VehicleResponse(vehicle.getId() , vehicle.getManufacturer() , vehicle.getModelName() , vehicle.getVehicleNumber() , vehicle.getRentalType() , vehicle.getFuelType() , vehicle.getStatus() , vehicle.getCarZone().getId() , vehicle.getCarZone().getName() , vehicle.getCarZone().getAddress()  , vehicle.getHourlyRate() , vehicle.getDailyRate());
     }
 
     // 차량번호 중복 확인
@@ -87,9 +87,7 @@ public class VehicleService {
                 .orElseThrow(() -> new VehicleNotFoundException("해당 차량이 존재하지 않습니다."));
 
         vehicle.changeStatus(request.getStatus());
-
-        VehicleResponse response = new VehicleResponse(vehicle.getId() , vehicle.getManufacturer() , vehicle.getModelName() , vehicle.getVehicleNumber() , vehicle.getRentalType() , vehicle.getFuelType() , vehicle.getStatus() , vehicle.getHourlyRate() , vehicle.getDailyRate());
-        return response;
+        return toResponse(vehicle);
         // DB에서 해당 ID의 차량을 찾고, 없으면 오류를 발생시킨다. 있으면 차량 상태를 변경하고, 변경된 차량을 VehicleResponse로 변환해 반환한다.
     }
 

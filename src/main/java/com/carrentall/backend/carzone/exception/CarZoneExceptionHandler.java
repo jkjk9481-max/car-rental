@@ -1,0 +1,17 @@
+package com.carrentall.backend.carzone.exception;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+@RestControllerAdvice
+public class CarZoneExceptionHandler {
+
+    @ExceptionHandler(CarZoneConflictException.class)
+    public ResponseEntity<String> handleException(CarZoneConflictException e){
+        HttpStatus status = HttpStatus.CONFLICT;
+        String message = e.getMessage();
+        return new ResponseEntity<>(message, status);
+    }
+}
