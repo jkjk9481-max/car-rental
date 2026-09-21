@@ -1,5 +1,6 @@
 package com.carrentall.backend.vehicle.repository;
 
+import com.carrentall.backend.reservation.entity.ReservationStatus;
 import com.carrentall.backend.vehicle.entity.FuelType;
 import com.carrentall.backend.vehicle.entity.RentalType;
 import com.carrentall.backend.vehicle.entity.Vehicle;
@@ -10,6 +11,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -46,5 +48,24 @@ public interface VehicleRepository extends JpaRepository<Vehicle,Long> {
 
     // 전달받은 카존 ID에 속한 차량 목록을 DB에서 조회한다
     List<Vehicle> findByCarZone_Id(Long carZoneId);
+
+    @Query
+
+
+            ("""
+    SELECT v 
+        FROM Vehicle v
+        WHERE(v.carZone.id = :carZoneId)
+        AND(v.status = :vehicleStatus)
+        AND NOT EXISTS(
+            SELECT r
+            FROM Reservation r 
+            WHERE(r.vehicle = v)
+            AND(r.status = :reservationStatus)
+            AND(r.startAt < :endAt)
+            AND(r.endAt > :startAt)
+            )
+""")
+    List<Vehicle> findAvailableVehicles(@Param("carZoneId")Long  carZoneId, @Param("vehicleStatus")VehicleStatus vehicleStatus , @Param("reservationStatus")ReservationStatus reservationStatus, @Param("startAt") LocalDateTime startAt, @Param("endAt")LocalDateTime endAt);
 
 }

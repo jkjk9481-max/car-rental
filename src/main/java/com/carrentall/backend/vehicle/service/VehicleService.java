@@ -1,8 +1,11 @@
 package com.carrentall.backend.vehicle.service;
 
 import com.carrentall.backend.carzone.entity.CarZone;
+import com.carrentall.backend.carzone.exception.CarZoneConflictException;
 import com.carrentall.backend.carzone.exception.CarZoneNotFoundException;
 import com.carrentall.backend.carzone.repository.CarZoneRepository;
+import com.carrentall.backend.reservation.entity.ReservationStatus;
+import com.carrentall.backend.reservation.exception.InvalidReservationTimeException;
 import com.carrentall.backend.vehicle.dto.VehicleCreateRequest;
 import com.carrentall.backend.vehicle.dto.VehicleResponse;
 import com.carrentall.backend.vehicle.dto.VehicleStatusUpdateRequest;
@@ -17,6 +20,7 @@ import com.carrentall.backend.vehicle.repository.VehicleRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
@@ -179,4 +183,29 @@ public class VehicleService {
 
         //  카존 존재 여부를 확인하고, 있으면 그 카존 ID로 차량 목록을 조회
     }
+
+    @Transactional(readOnly = true)
+    public List<VehicleResponse> getAvailableVehicles(Long carZoneId , LocalDateTime startAt, LocalDateTime endAt) {
+        if (startAt == null || endAt == null) {
+            throw new InvalidReservationTimeException("예약 시간을 설정해주세요.");
+        }
+        if (startAt.isBefore(LocalDateTime.now())) {
+            throw new InvalidReservationTimeException("과거 시간으로 예약할 수 없습니다.");
+        }
+        if (!startAt.isBefore(endAt)) {
+            throw new InvalidReservationTimeException("시작 시간은 종료 시간보다 이전이어야 합니다");
+        }
+        if (carZoneId == null) {
+            throw new CarZoneNotFoundException("해당 장소는 예약장소가 아닙니다.");
+        }
+
+        List<VehicleResponse> vehicles = vehicleRepository.findAvailableVehicles(carZoneId, VehicleStatus.AVAILABLE, ReservationStatus.RESERVED, startAt, endAt)
+                .stream()
+                .map(this::toResponse)
+                .toList();
+
+        return vehicles;
+    }
+
+
 }
