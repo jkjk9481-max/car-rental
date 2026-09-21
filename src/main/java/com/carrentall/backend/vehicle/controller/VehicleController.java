@@ -77,4 +77,10 @@ public class VehicleController {
         // required = false -> 없어도되고 있어도 괜찮다
         return vehicleService.searchVehicles(status, fuelType, rentalType);
     }
+
+    @GetMapping("/carzone/{carZoneId}")
+    public List<VehicleResponse> getVehiclesByCarZone(@PathVariable Long carZoneId){
+        // URL의 경로 변수(Path Variable)를 받아오는 어노테이션
+        return vehicleService.getVehiclesByCarZone(carZoneId);
+    }
 }

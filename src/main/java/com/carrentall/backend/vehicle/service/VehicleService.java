@@ -1,6 +1,7 @@
 package com.carrentall.backend.vehicle.service;
 
 import com.carrentall.backend.carzone.entity.CarZone;
+import com.carrentall.backend.carzone.exception.CarZoneNotFoundException;
 import com.carrentall.backend.carzone.repository.CarZoneRepository;
 import com.carrentall.backend.vehicle.dto.VehicleCreateRequest;
 import com.carrentall.backend.vehicle.dto.VehicleResponse;
@@ -158,5 +159,24 @@ public class VehicleService {
         //  2. 전달된 검색조건 중 null이 아닌 조건만 적용하여 차량을 조회
         //  3. Vehicle Entity 목록을 VehicleResponse 목록으로 변환
         //  4. 클라이언트에게 반환
+    }
+
+    @Transactional(readOnly = true) 
+    // 조회 작업
+    public List<VehicleResponse> getVehiclesByCarZone(Long carZoneId){
+        boolean exits = carZoneRepository.existsById(carZoneId);
+
+        if(!exits){
+            throw new CarZoneNotFoundException("해당 장소를 찾아볼수없습니다.");
+        }
+
+        List<VehicleResponse> vehicles = vehicleRepository.findByCarZone_Id(carZoneId)
+                .stream()
+                .map(this::toResponse)
+                .toList();
+
+        return vehicles;
+
+        //  카존 존재 여부를 확인하고, 있으면 그 카존 ID로 차량 목록을 조회
     }
 }

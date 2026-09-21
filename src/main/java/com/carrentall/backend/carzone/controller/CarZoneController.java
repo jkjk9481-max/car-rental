@@ -22,4 +22,6 @@ public class CarZoneController {
     public void createCarZone(@Valid @RequestBody CarZoneCreateRequest carZoneCreateRequest) {
         carZoneService.createCarZone(carZoneCreateRequest);
     }
+
+
 }

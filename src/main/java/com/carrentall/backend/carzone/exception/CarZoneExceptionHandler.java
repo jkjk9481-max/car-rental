@@ -14,4 +14,11 @@ public class CarZoneExceptionHandler {
         String message = e.getMessage();
         return new ResponseEntity<>(message, status);
     }
+
+    @ExceptionHandler(CarZoneNotFoundException.class)
+    public ResponseEntity<String> handleException(CarZoneNotFoundException e){
+        HttpStatus status = HttpStatus.NOT_FOUND;
+        String message = e.getMessage();
+        return new ResponseEntity<>(message, status);
+    }
 }

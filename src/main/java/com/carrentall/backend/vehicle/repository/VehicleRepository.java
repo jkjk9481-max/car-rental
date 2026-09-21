@@ -44,4 +44,7 @@ public interface VehicleRepository extends JpaRepository<Vehicle,Long> {
     Optional<Vehicle> findWithLockById(Long id);
     // id로 Vehicle을 조회하되, 이 조회에서는 PESSIMISTIC_WRITE 락을 잡는다.
 
+    // 전달받은 카존 ID에 속한 차량 목록을 DB에서 조회한다
+    List<Vehicle> findByCarZone_Id(Long carZoneId);
+
 }
