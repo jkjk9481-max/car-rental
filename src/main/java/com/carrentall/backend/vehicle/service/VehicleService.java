@@ -199,12 +199,22 @@ public class VehicleService {
             throw new CarZoneNotFoundException("해당 장소는 예약장소가 아닙니다.");
         }
 
+        boolean exists = carZoneRepository.existsById(carZoneId);
+        if(!exists){
+            throw new CarZoneNotFoundException("해당 장소는 예약 장소가 아닙니다.");
+        }
+
+
+
         List<VehicleResponse> vehicles = vehicleRepository.findAvailableVehicles(carZoneId, VehicleStatus.AVAILABLE, ReservationStatus.RESERVED, startAt, endAt)
                 .stream()
                 .map(this::toResponse)
                 .toList();
 
         return vehicles;
+        //  > 시작·종료 시간의 누락, 과거 시간, 잘못된 시간 순서를 검사하고 카존 존재 여부를 확인한다. 검증을 통과하면 장소·운영 상태·예약 상태·시간을 검색 조건으로 전달한다. Repository가 겹치는 유효 예약이 없는
+        //  > 차량들을 조회하면, 각 차량을 응답 DTO로 변환해 목록으로 반환한다.
+        // 운영 가능한 차량 중에서, 선택한 시간과 겹치는 RESERVED 예약이 없는 차량을 찾아라.
     }
 
 

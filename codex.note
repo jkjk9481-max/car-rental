@@ -1,5 +1,447 @@
 # Car Rental / Car Sharing Project Note
 
+# 2026-09-22 포트폴리오 평가·모의 면접·프론트 완성 방향
+
+## 1. 이번 대화의 목적과 결론
+
+- 현재 프로젝트를 중소기업·스타트업·중견기업 신입 포트폴리오 관점에서 점검했다.
+- 현재는 단순 CRUD를 넘어 JWT 인증, 권한, 차량·카존, 예약 충돌, 비관적 락, Mock 결제, 관리자 흐름을 다루는 **좋은 대표 프로젝트의 중간 단계**다.
+- 기능 범위와 소재는 좋지만 외부에서 실행해 볼 수 있는 취업용 완성본은 아니다. 시간 검색의 HTTP·화면 연결, 자동화 테스트, 반응형 UI, 배포, README·ERD·API 문서가 핵심 보완 사항이다.
+- 중소기업에는 위 보완 후 충분히 경쟁력 있는 대표작이 될 수 있다. 스타트업에는 완결된 사용자 경험과 배포가 중요하고, 중견기업에는 테스트·동시성 검증·재현 가능한 실행 환경·CI와 기술적 설명이 더 필요하다.
+- 프로젝트 개수는 많을 필요가 없다. 추천 구성은 **완성도 높은 렌터카 대표작 1개 + 성격이 다른 작은 보조/팀 프로젝트 1개**다. 현재 대표작을 미완성으로 둔 채 새 대형 프로젝트를 시작하지 않는다.
+
+## 2. 포트폴리오에서 강조할 핵심 이야기
+
+- 기존 렌터카 업체의 차량을 사용자가 장소와 시간으로 검색하고 예약하는 제휴형 웹서비스를 목표로 한다.
+- React·JavaScript 프론트엔드, Spring Boot·JPA 백엔드, PostgreSQL DB를 사용했다.
+- 핵심 기능은 JWT 로그인과 USER/ADMIN 권한, 카존별 차량 조회, 예약 생성·취소, 시간 충돌 검사, 비관적 락, 요금 계산, Mock 결제, 사용자/관리자 조회다.
+- 프로젝트를 설명할 때 기능 개수를 나열하는 것보다 다음 문제 해결 흐름을 대표 사례로 사용한다.
+
+```text
+같은 차량에 동시 예약 요청이 들어올 수 있음
+→ 예약 생성 트랜잭션에서 차량 행에 비관적 쓰기 락 획득
+→ 락을 가진 상태에서 기존 유효 예약과 시간 충돌 재검사
+→ 통과한 요청만 예약 저장 및 커밋
+→ 다음 요청은 최신 DB 상태로 충돌을 검사
+```
+
+- 아직 실제 동시 요청 자동화 테스트로 보장한 것은 아니므로 구현 의도와 실행 검증 결과를 구분해서 말한다.
+
+## 3. 모의 면접에서 확인한 강점
+
+- 사용자의 장소·시간 선택부터 차량 예약까지 비즈니스 상황을 구체적인 시간 예시로 설명할 수 있었다.
+- 검색 결과가 예약 확정을 보장하지 않으며 생성 시점에 다시 검증해야 한다는 점을 이해했다.
+- 같은 차량도 시간이 겹치지 않으면 여러 미래 예약을 가질 수 있다는 점을 이해했다.
+- Entity를 직접 반환하지 않고 공개할 필드만 Response DTO에 담는 기본 목적을 설명했다.
+- Request DTO와 Response DTO의 데이터 방향을 구분했다.
+- 미래 예약이 있는데 VehicleStatus를 어떻게 관리할지 의문을 제기하여 현재 상태 모델의 혼합 가능성을 스스로 발견했다.
+- 질문과 피드백을 통해 설명을 수정하는 능력과 실제 사용자 상황으로 사고하는 점은 긍정적이었다.
+
+## 4. 모의 면접에서 보완할 설명 습관
+
+- 현재 구현과 앞으로 만들 아이디어를 구분한다. 코드에 없는 대기열·화면 진입 시 락 등을 구현했다고 말하지 않는다.
+- 기술 설명은 다음 순서를 지킨다.
+
+```text
+무엇을 먼저 실행하는가
+→ 어떤 데이터를 조회하는가
+→ 무엇을 검사하는가
+→ 무엇을 저장하는가
+→ 실패하거나 커밋하면 어떻게 끝나는가
+```
+
+- 부정확했던 표현을 다음처럼 고친다.
+
+```text
+"시간을 선택하면 락이 걸린다"
+→ 예약 생성 요청에서 차량을 잠금 조회할 때 락을 획득한다.
+
+"대기열을 만들었다"
+→ 별도 애플리케이션 대기열이 아니라 DB 행 잠금 때문에 다음 트랜잭션이 대기한다.
+
+"롤백하는 성능"
+→ 트랜잭션의 롤백 기능 또는 원자성이다.
+
+"JWT가 URL을 보고 차단한다"
+→ JWT 필터가 인증 정보를 SecurityContext에 저장하고 SecurityConfig가 경로별 권한을 비교한다.
+
+"소나타가 예약되었다"
+→ 같은 모델이 여러 대일 수 있으므로 특정 차량 ID가 예약되었다고 설명한다.
+```
+
+## 5. 비관적 락과 예약 충돌 검사의 정확한 역할
+
+- 비관적 락은 같은 차량의 예약 생성 요청이 임계 구역을 동시에 통과하지 않도록 처리 순서를 만든다.
+- 예약 충돌 검사는 기존 예약과 새 예약 시간이 실제로 겹치는지를 판단하는 비즈니스 규칙이다.
+- 락만 있고 충돌 검사가 없으면 요청이 순서대로 실행되어도 중복 예약을 차단할 조건이 없다.
+- 충돌 검사만 있고 락이 없으면 두 요청이 저장 전에 모두 "충돌 없음"을 읽고 함께 성공할 수 있다.
+- 현재 코드의 정확한 순서는 다음과 같다.
+
+```text
+예약 생성 API 요청
+→ @Transactional 시작
+→ 차량을 PESSIMISTIC_WRITE로 조회하고 락 획득
+→ 차량 운영 상태 확인
+→ 기존 RESERVED 예약과 시간 충돌 확인
+→ 예약 저장
+→ 커밋
+→ 락 해제
+```
+
+- A가 먼저 커밋하면 B는 락을 얻은 후 A의 예약을 보고 충돌 예외가 발생한다. A가 예외로 롤백되면 B는 충돌이 없을 경우 성공할 수 있다.
+- 현재 방식은 차량 행 단위로 잠그므로 같은 차량에 대해 시간이 겹치지 않는 요청도 잠시 직렬화될 수 있다는 한계가 있다.
+
+## 6. @Transactional을 사용하는 핵심 이유
+
+- 시간·사용자·차량 상태 검증은 대부분 저장 전이므로 검증 실패 자체를 되돌리는 것이 핵심 설명은 아니다.
+- 차량 락 획득부터 충돌 검사와 예약 저장·커밋까지 하나의 트랜잭션으로 유지해야 락이 중간에 풀리지 않는다.
+- 여러 DB 변경이 추가되는 경우 중간 예외로 일부만 반영되지 않도록 작업의 원자성을 보장한다.
+- Spring의 기본 롤백은 처리되지 않은 RuntimeException 계열을 중심으로 적용된다는 점을 기억한다.
+
+## 7. 차량 상태와 시간별 예약 가능성 분리
+
+- `VehicleStatus.AVAILABLE`은 차량이 정비·운영 중지 상태가 아니라는 운영 가능 상태로 해석할 수 있다.
+- 미래 예약 하나가 생겼다고 차량을 즉시 `RESERVED`로 변경하면 그 예약 전후의 겹치지 않는 시간까지 모두 막히는 문제가 생긴다.
+- 특정 시간의 예약 가능 여부는 고정 상태 하나로 결정하지 않고 다음을 조합해 계산한다.
+
+```text
+선택한 카존에 속한 차량
+AND 차량 운영 상태가 AVAILABLE
+AND 요청 시간과 겹치는 유효 예약이 없음
+```
+
+- `VehicleStatus` 안의 AVAILABLE·RESERVED·IN_USE·MAINTENANCE·UNAVAILABLE는 운영 상태와 예약 상태가 섞여 보일 수 있어 추후 모델 의미를 재검토한다.
+- 검토 가능한 방향은 Vehicle에는 AVAILABLE/MAINTENANCE/UNAVAILABLE 같은 운영 상태를 두고, 예약 여부는 Reservation.status와 시간으로 판단하는 것이다. 실제 이용 중 상태가 필요하면 별도 의미와 전환 시점을 정한다.
+- 예약 충돌은 모델명이 아니라 차량 한 대의 ID 기준으로 판단한다. 같은 카존에 같은 모델이 여러 대 있을 수 있다.
+
+## 8. 시간 충돌과 검색·생성의 역할
+
+- 겹침 조건은 기존 시작 `<` 새 종료이면서 기존 종료 `>` 새 시작이다.
+- 기존 예약 종료와 새 예약 시작이 같은 경우는 현재 조건에서 겹치지 않는다. 인수 준비 시간 버퍼는 아직 없다.
+- 검색 API는 조회 시점의 후보 차량을 보여줄 뿐 예약을 보장하지 않는다.
+- 검색 이후 다른 사용자가 먼저 예약하거나 관리자가 차량 상태를 바꿀 수 있으므로 예약 생성에서 최신 상태를 다시 검사한다.
+- 화면에는 예약 가능한 차량만 반환하거나, 모든 차량에 `available`과 불가 사유를 포함하는 방식이 가능하다. 현재 `findAvailableVehicles()`는 가능 차량만 조회하는 방식이다.
+- 화면에서 버튼이 활성화되어 있어도 확정은 아니며 서버가 생성 시점에 최종 결정한다.
+
+## 9. DTO 설명 정리
+
+- Request DTO는 클라이언트가 보낼 수 있는 필드를 제한하고 입력값을 검증하는 API 입력 계약이다.
+- Entity를 직접 요청으로 받으면 ID·권한·상태처럼 서버가 관리해야 하는 필드까지 외부에서 변경할 위험이 있다.
+- Response DTO는 서버가 외부에 공개할 필드만 정의하는 API 출력 계약이다.
+- DTO로 Entity와 API 구조를 분리하면 내부 DB 모델 변경이 곧바로 응답 변경으로 이어지는 결합을 줄일 수 있다.
+- 연관관계 직렬화의 순환 참조, 불필요한 데이터 노출, 의도하지 않은 LAZY 조회 가능성도 줄인다.
+
+```text
+클라이언트 JSON
+→ Request DTO 변환 및 검증
+→ Controller
+→ Service의 조회·변환·저장
+→ Entity/Repository
+→ Response DTO 변환
+→ 클라이언트 응답
+```
+
+## 10. JWT와 USER/ADMIN 권한 흐름
+
+- 회원가입과 로그인은 permitAll이며 신규 회원의 Role은 User 생성자에서 서버가 USER로 지정한다.
+- `/api/admin/**` 주소 자체가 권한을 주는 것이 아니라 보호할 경로를 뜻한다.
+- 로그인 성공 시 DB User의 email과 role을 JWT에 담아 서버 비밀키로 서명한다.
+- 이후 JwtAuthenticationFilter가 Authorization Bearer 토큰의 서명과 만료를 검증한다.
+- 검증에 성공하면 email과 role을 꺼내 `ROLE_USER` 또는 `ROLE_ADMIN` 권한을 만들고 SecurityContext에 저장한다.
+- SecurityConfig의 `hasRole("ADMIN")` 규칙이 현재 인증 권한과 관리자 경로 요구 권한을 비교한다.
+- JWT payload의 USER를 ADMIN으로 직접 수정하면 이메일이 아니라 **서명 불일치**로 변조를 발견한다.
+- JWT payload는 암호화된 비밀 정보가 아니므로 민감정보를 넣지 않는다.
+- 현재는 요청마다 DB의 최신 Role을 다시 확인하지 않으므로 DB에서 권한을 변경해도 기존 토큰 만료 전까지 과거 권한이 남을 수 있다.
+- 탈취된 정상 JWT 대응, 로그아웃/폐기, Refresh Token 정책은 아직 별도 설계가 필요한 후속 주제다.
+
+## 11. 현재 면접 준비도 평가
+
+- 서비스 목적과 사용자 흐름: 보통~양호.
+- 예약 비즈니스 로직과 설계 문제 발견: 양호.
+- 실제 코드 위치와 각 계층 역할 파악: 양호.
+- 비관적 락·트랜잭션·JWT·Security 세부 실행 원리: 보완 필요.
+- 테스트로 동작을 입증하는 설명: 현재 약함.
+- 현재 면접관 관점의 인상은 "기능을 직접 구현하며 배우고 있고 문제의 목적은 이해하지만, 프레임워크 내부 동작과 용어의 정확성을 더 검증해야 하는 지원자"에 가깝다.
+- 핵심 흐름과 테스트를 보완하면 "단순 CRUD를 넘어서 예약 동시성과 권한을 고민하고 현재 구현의 한계도 설명할 수 있는 신입"으로 평가가 좋아질 수 있다.
+
+### 우선 연습할 다섯 가지
+
+1. JWT 발급 → 필터 검증 → SecurityContext → 권한 검사.
+2. 예약 요청 → 차량 락 → 시간 충돌 검사 → 저장 → 커밋.
+3. `@Transactional`과 비관적 락의 관계.
+4. 장소·시간별 가능 차량 검색 JPQL.
+5. Entity, Request DTO, Response DTO의 차이와 데이터 흐름.
+
+각 주제는 아래 네 문장에 답할 수 있도록 준비한다.
+
+```text
+왜 필요한가?
+현재 코드는 어떻게 동작하는가?
+없으면 어떤 문제가 생기는가?
+현재 구현과 검증의 한계는 무엇인가?
+```
+
+## 12. 프론트엔드 완성 전략
+
+- 백엔드 지원용 포트폴리오이므로 전문 디자이너 수준보다 사용자가 전체 예약 흐름을 끊김 없이 체험할 수 있는 일관된 반응형 화면이 목표다.
+- React를 처음부터 다시 공부한 후 만드는 것이 아니라 현재 API 연결 위에 서비스 UI를 단계적으로 입힌다.
+- Codex가 프론트 구현을 직접 지원할 수 있다는 기존 사용자 허용 범위를 유지한다. 구현 시 기존 API·state 흐름을 보존하고 JSX·CSS·props·state·이벤트·응답 흐름을 초보자 관점에서 설명한다.
+- 사용자는 제출한 화면에 대해 컴포넌트 역할, props, state, API 응답 저장 위치, 클릭 이벤트, 모바일 CSS 정도는 설명할 수 있어야 한다.
+
+### 목표 사용자 흐름
+
+```text
+홈/로그인
+→ 장소·시작·종료 시간 선택
+→ 예약 가능한 차량 목록
+→ 차량 상세
+→ 예약 확인
+→ Mock 결제
+→ 완료
+→ 내 예약/내 결제
+```
+
+### 공통 UI 후보
+
+```text
+Header
+SearchPanel
+VehicleCard
+StatusBadge
+LoadingMessage
+ErrorMessage
+EmptyState
+ConfirmModal
+```
+
+### 구현 순서
+
+1. 공통 Header와 전체 콘텐츠 레이아웃.
+2. 카존·시작·종료 시간 검색 영역.
+3. 차량 카드와 목록.
+4. 차량 상세와 예약 버튼.
+5. 예약 입력·확인.
+6. Mock 결제와 완료 화면.
+7. 내 예약·내 결제.
+8. 관리자 화면.
+9. 모바일 반응형.
+10. 로딩·오류·빈 결과·로그인 만료 처리.
+
+### 프론트 완료 기준
+
+- PC와 모바일에서 레이아웃이 깨지지 않는다.
+- 장소와 시간을 쉽게 선택하고 차량을 찾을 수 있다.
+- 차량 카드에 모델·차량 정보·장소·요금·상태가 일관되게 표시된다.
+- 로딩·오류·빈 결과·예약 불가·로그인 필요 상태가 구분된다.
+- 예약과 결제 성공 여부를 확인할 수 있다.
+- Mock 데이터와 Mock 결제임을 명시한다.
+- 로컬 주소 하드코딩을 환경별 설정으로 분리한 뒤 실제 배포 환경에서 전체 흐름을 검증한다.
+
+## 13. 다음 개발 우선순위
+
+1. 기존 중단 지점대로 시간 검색 Controller를 작성한다.
+2. 최신 백엔드 컴파일과 실제 PostgreSQL에서 JPQL·경계 시간·권한을 검증한다.
+3. 프론트에 카존·시작·종료 시간 검색을 연결한다.
+4. 검색 → 상세 → 예약 → Mock 결제 전체 흐름을 완성한다.
+5. 예약 충돌, 타인 접근, 권한, 결제 취소, 동시 요청 자동화 테스트를 프로젝트에 영구 추가한다.
+6. 공통 반응형 UI를 적용하고 브라우저·모바일 화면을 검증한다.
+7. 환경변수, 배포 CORS, Docker/실행 재현, CI, README, ERD, API 명세를 정리한다.
+8. 대표 프로젝트를 완성한 뒤 지원을 시작하고, 필요하면 협업 경험을 보완할 작은 팀 프로젝트 하나를 추가한다.
+
+---
+
+# 2026-09-21 최신 진행 기록: 장소 선택 연동과 시간별 예약 가능 차량 검색
+
+## 1. 다음 대화에서 가장 먼저 읽을 중단 지점
+
+- 장소 목록 조회와 장소별 차량 조회 API는 Controller까지 작성했다. React 차량 목록 화면도 장소 선택 → 해당 장소 차량 API 요청으로 연결했다.
+- 시간별 예약 가능 차량 검색은 VehicleRepository.findAvailableVehicles의 JPQL과 VehicleService.getAvailableVehicles까지 사용자 작성·코드 리뷰 완료다.
+- **바로 다음 작업은 VehicleController에 장소·시작·종료 시간을 받는 검색 API를 연결하는 것이다.** 시간 검색 Controller와 프론트 시간 입력은 아직 없다.
+- 기존 GET /api/vehicles/search는 운영 상태·연료·대여 유형 검색이다. 새 시간 검색과 혼동하거나 기존 기능을 덮어쓰지 않는다.
+- 아래 9월 20일 기록의 "카존 조회 Controller가 없다"는 내용은 과거 상태다. 최신 실제 코드와 이 기록을 우선한다.
+- 이번 기록 직전 getAvailableVehicles의 exists 변수 철자가 바로잡힌 것을 확인했다. 과거 리뷰의 exits 지적을 그대로 반복하지 않는다.
+
+## 2. 협업·학습 방식과 사용자 허용 범위
+
+- AGENTS.md의 기본 원칙은 사용자가 코드를 작성하고 Codex가 목적·힌트·리뷰를 제공하는 것이다. 백엔드는 이번에도 사용자가 직접 작성했다.
+- 사용자는 프론트를 잘 모르겠다고 하며 "프론트쪽은 진짜 너가 해주고 주석이랑 설명도해줘"라고 명시적으로 요청했다. 이 세션의 프론트 작업은 Codex가 직접 구현하고 초보자용 주석·설명을 제공하는 방식으로 진행했다. 이를 백엔드 임의 수정 허용으로 확대하지 않는다.
+- 사용자는 코드 뜻뿐 아니라 "무엇을 구현하려 했고, 왜 이렇게 나눴고, 데이터가 어떻게 흐르는지"를 이해하길 원한다. 목적 → 판단 이유 → 흐름 → 담당 코드 → 확인 방법 순서로 설명한다.
+- 수정 보고가 오면 실제 파일을 다시 읽는다. 맞는 부분을 먼저 인정하고 누락/오류를 구분한다. 문법 퀴즈를 반복하지 않는다.
+- 사용자는 중간에 Postman처럼 모의 테스트를 대신 해 달라고 요청했다. 아래 명시한 범위만 실행 검증됐다. 이후 작성한 시간 검색 코드까지 검증된 것으로 말하지 않는다.
+- 이번 문서 정리는 사용자의 명시적 요청으로 codex.note를 편집한 것이다.
+
+## 3. 장소 관련 백엔드 구현·리뷰 완료
+
+### 일반 사용자 카존 목록
+
+- 파일: carzone/controller/CarZoneQueryController.java
+- GET /api/carzones → CarZoneService.getAllCarZones() → List<CarZoneResponse> 반환.
+- CarZoneService는 private final 필드로 생성자 주입한다.
+- 기존 CarZoneController의 POST /api/admin/carzones는 관리자 장소 등록용으로 유지했다.
+- 클래스 이름이나 Query라는 단어가 권한을 정하는 것은 아니다. SecurityConfig의 /api/admin/** 규칙이 관리자 제한, 나머지 authenticated 규칙이 로그인 사용자 조회를 결정한다. 조회는 USER·ADMIN 모두 가능하고 공개 API가 아니다.
+
+### 장소별 차량 목록
+
+- VehicleRepository.findByCarZone_Id(Long carZoneId): Vehicle.carZone.id가 인자와 같은 차량들을 List<Vehicle>로 조회한다.
+- 존재 여부를 boolean으로 반환하는 메서드가 아니다. CarZone_Id는 엔티티 속성 경로이며 DB 컬럼 이름을 직접 쓴 것이 아니다.
+- VehicleService.getVehiclesByCarZone: existsById로 장소 확인 → 없으면 CarZoneNotFoundException → 차량 조회 → toResponse → 목록 반환. @Transactional(readOnly = true) 적용.
+- CarZoneNotFoundException은 RuntimeException을 상속하고 메시지를 부모 생성자에 전달한다.
+- CarZoneExceptionHandler에 해당 예외의 HTTP 404 응답을 추가했다. 기존 중복 장소 409 처리도 유지한다.
+- VehicleController에 GET /api/vehicles/carzone/{carZoneId} 추가. @PathVariable Long carZoneId를 Service에 전달하고 List<VehicleResponse> 반환.
+- 정책: 없는 카존은 404, 존재하지만 차량이 없는 카존은 200과 빈 배열.
+
+## 4. 실행한 모의 테스트와 한계
+
+- 테스트 당시 localhost:8080에서 서버 연결에 실패했다. Postman 앱이나 실제 실행 서버 대신 MockMvc를 사용했다.
+- 실제 VehicleController/CarZoneQueryController, 실제 VehicleService/CarZoneService, 실제 CarZoneExceptionHandler를 구성하고 Repository만 Mockito로 모의 처리했다.
+- 임시 Java 테스트와 Gradle init script 위치: C:/Users/jkjk9/AppData/Local/Temp/car-rental-api-smoke-20260921/
+- 실행: gradlew.bat test --tests CarZoneApiSmokeTest --init-script [위 폴더]/smoke.init.gradle
+- 결과: tests 6, failures 0, errors 0, skipped 0. 당시 소스·테스트 컴파일 및 BUILD SUCCESSFUL 확인.
+- 시나리오: 카존 목록 200과 필드 확인 / 빈 카존 목록 200 [] / 선택 카존 차량 200과 모델·카존·요금 확인 / 존재하지만 차량 없는 카존 200 [] / 없는 카존 404와 차량 Repository 미호출 / 숫자가 아닌 카존 ID 400.
+- 리포트: C:/Users/jkjk9/AppData/Local/Temp/car-rental-gradle-build/test-results/test/TEST-CarZoneApiSmokeTest.xml
+- **실제 PostgreSQL 조회, Repository 파생 쿼리 실행, JWT·SecurityFilterChain, 브라우저 연동은 이 테스트에서 검증하지 않았다.** 모의 Repository이므로 데이터 필터링 자체가 DB에서 정확히 실행된다는 증거는 아니다.
+- 이 테스트는 시간 검색 JPQL·Service 추가 전에 실행됐다. 최신 백엔드 컴파일과 새 JPQL 실행 검증은 별도로 남아 있다.
+- 임시 파일은 OS 임시 폴더에 있어 삭제될 수 있다. 프로젝트의 영구 회귀 테스트가 추가된 것은 아니다.
+
+## 5. 프론트 구현과 배운 개념
+
+파일: frontend/src/pages/VehicleListPage.jsx
+
+### 카존 목록 로딩
+
+- carZones/setCarZones: 카존 배열, 초기값 [].
+- carZoneError/setCarZoneError: 장소 조회 오류, 초기값 빈 문자열.
+- 별도 useEffect에서 fetchCarZones 비동기 함수 정의 후 호출. GET /api/carzones → response.data → setCarZones.
+- 차량 오류와 카존 오류를 별도로 관리한다. 카존 요청이 차량 오류를 덮어쓰지 않는다.
+- 사용자 초안에서 차량 finally의 로딩 종료 누락, 카존 함수 호출 누락, effect 의존성 배열 누락, 잘못된 오류 setter를 발견하고 사용자 요청으로 수정했다.
+
+### 장소 선택 UI
+
+- selectedCarZoneId/setSelectedCarZoneId를 사용한다. 빈 문자열은 전체 장소, select에서 읽는 ID는 문자열이다.
+- label의 htmlFor와 select의 id를 car-zone으로 연결했다.
+- select의 value는 selectedCarZoneId, onChange는 handleCarZoneChange.
+- handleCarZoneChange는 event.target.value를 선택 state에 저장한다.
+- 전체 장소 option 다음에 carZones.map으로 각 카존 option 생성. key/value는 carZone.id, 표시 글자는 carZone.name.
+- 카존 오류는 role="alert" 문단으로 표시한다.
+
+### 선택한 장소의 차량 API 연결
+
+- 기존 차량 조회 effect의 의존성을 [selectedCarZoneId]로 변경했다.
+- 선택값이 빈 문자열이면 /api/vehicles, ID가 있으면 /api/vehicles/carzone/{ID}에 GET 요청한다.
+- 요청 시작 시 차량 오류 초기화, loading=true, 이전 vehicles=[] 처리.
+- 응답 data를 setVehicles에 저장하면 기존 vehicles.map이 새 목록을 표시한다.
+- 로딩 중 전체 화면을 조기 return하던 구조를 바꾸어 장소 선택 상자를 유지한다. 차량 로딩 안내는 role="status"로 표시한다.
+- 성공한 조회 결과가 비어 있으면 전체 장소/선택 장소에 맞는 빈 목록 문구를 표시한다. 로딩·오류를 빈 결과로 표시하지 않는다.
+- effect 안의 ignore와 cleanup으로 이전 요청의 늦은 성공·실패·finally가 새 선택의 화면 상태를 덮어쓰지 않게 했다. HTTP 요청 취소 자체는 아니다.
+- 최신 장소별 조회 UI 수정 후 npm.cmd run build 성공. **실제 브라우저 클릭, 실제 서버 응답, 빠른 선택 변경의 실행 검증은 아직 하지 않았다.**
+- 아직 카존 전용 로딩/빈 목록 안내 등 UX 보완 여지가 있다. 차량 운영 상태와 시간 기준 예약 가능 여부를 같은 것으로 취급하지 않는다.
+
+### 문법 설명 메모
+
+- 함수 정의는 작업 준비, 함수 호출은 실행이다. fetchCarZones 정의만으로 요청되지 않는다.
+- await는 해당 비동기 함수의 다음 처리를 응답까지 기다리며 브라우저 전체를 멈추지 않는다.
+- response.data는 서버 응답 본문, setter는 React 화면 데이터 저장이다. DB 저장과 다르다.
+- state가 바뀌면 React가 화면을 다시 계산한다. JSX에서 그 state를 사용해야 값이 보인다.
+- []는 재렌더마다 effect를 반복하지 않도록 한다. 새 마운트에서 실행하며 개발 StrictMode의 추가 실행 가능성을 설명했다.
+- [selectedCarZoneId]는 선택 ID 변경 시 조회를 다시 실행하는 연결이다.
+- option의 key는 React 식별용, value는 선택값, 안쪽 글자는 사용자 표시용이다.
+- 조건 ? 참일 때 값 : 거짓일 때 값, 백틱 문자열의 ${...}, JSX 중괄호, map의 반환을 실제 코드로 설명했다.
+
+## 6. 시간별 예약 가능 차량 검색 Repository: 구현·코드 리뷰 완료
+
+파일: vehicle/repository/VehicleRepository.java
+
+- 새 메서드 findAvailableVehicles 반환형은 List<Vehicle>.
+- 매개변수 순서: Long carZoneId, VehicleStatus vehicleStatus, ReservationStatus reservationStatus, LocalDateTime startAt, LocalDateTime endAt.
+- 각 매개변수의 @Param 이름이 JPQL의 이름과 일치한다. ReservationStatus와 LocalDateTime import도 추가됐다.
+- 쿼리의 의미:
+  1. Vehicle v의 carZone.id가 :carZoneId와 같다.
+  2. v.status가 :vehicleStatus와 같다.
+  3. 아래 조건의 Reservation r이 NOT EXISTS, 즉 존재하지 않는다.
+     - r.vehicle = v: 지금 검사 중인 차량의 예약.
+     - r.status = :reservationStatus: 검사 대상 예약 상태.
+     - r.startAt < :endAt: 기존 예약 시작이 검색 종료보다 빠름.
+     - r.endAt > :startAt: 기존 예약 종료가 검색 시작보다 늦음.
+- 검색 시간과 겹치는 지정 상태의 예약이 하나라도 있으면 해당 차량을 제외한다. 결과가 없으면 빈 목록이다.
+- 시간 경계는 기존 예약 검사와 동일하다. 기존 종료와 검색 시작이 같거나 기존 시작과 검색 종료가 같으면 겹치지 않는다. 인수 준비 시간 등 버퍼는 아직 없다.
+- JPQL에는 Java 엔티티/속성 이름을 사용한다. == 대신 =, NOT EXITS 대신 NOT EXISTS, RESERVATION 대신 Reservation으로 수정했다. 안쪽 괄호와 Java 메서드 선언도 완성했다.
+- SELECT v가 최종 차량 결과를 결정한다. 안쪽 SELECT r은 예약 목록을 반환하기 위한 것이 아니라 존재 여부 확인에 사용된다.
+- JPQL은 실행 시 JPA를 통해 SQL로 변환된다. DB 엔진이 Java 반복문 방식으로 실행한다고 단정하지 않는다.
+- **새 쿼리는 DB 실행·쿼리 초기화 검증 미완료다.** 이전 MockMvc 테스트로 이를 통과했다고 말하지 않는다.
+
+## 7. 시간 검색 Service: 구현·코드 리뷰 완료
+
+파일: vehicle/service/VehicleService.java
+
+- 메서드: getAvailableVehicles(Long carZoneId, LocalDateTime startAt, LocalDateTime endAt)
+- 반환형: List<VehicleResponse>, @Transactional(readOnly = true).
+- 실제 현재 검증 순서:
+  1. 시작 또는 종료가 null이면 InvalidReservationTimeException.
+  2. 시작이 LocalDateTime.now()보다 과거이면 같은 시간 예외.
+  3. 시작이 종료보다 이전이 아니면 같은 시간 예외.
+  4. carZoneId가 null이면 CarZoneNotFoundException.
+  5. carZoneRepository.existsById가 false이면 CarZoneNotFoundException.
+  6. Repository에 carZoneId, VehicleStatus.AVAILABLE, ReservationStatus.RESERVED, startAt, endAt 전달.
+  7. 조회 결과를 stream → map(this::toResponse) → toList → 반환.
+- 사용자 초안의 null 검사 &&를 ||로 수정했다. 한쪽 시간만 빠져도 차단해야 한다.
+- 시간 조건과 오류 메시지를 맞췄다. 카존 ID null 확인만 있던 코드에 DB existsById 확인을 추가했다.
+- 새로운 메서드의 변수 철자는 현재 exists이다.
+- 현재 null 카존도 404 예외로 처리한다. 다음 Controller에서는 카존 ID를 필수 요청값으로 받아 HTTP 누락은 400으로 처리할 계획이다. 필요하면 Service의 누락 입력 정책을 따로 정리한다.
+- 실제 컴파일·HTTP·DB 테스트는 이 새 기능에 대해 아직 하지 않았다.
+
+## 8. 사용자가 마지막에 이해하던 핵심: 상태와 @Param
+
+- 사용자는 "메서드 매개변수로 들어온 값이 쿼리에 연결되어 DB 값과 비교된다"는 흐름을 이해했다.
+- Java 호출 인자는 메서드 선언 순서로 전달된다. 그 다음 @Param("carZoneId")가 받은 값을 JPQL의 :carZoneId에 이름으로 바인딩한다. 문자열을 직접 이어 붙이는 방식은 아니다.
+- Service는 사용자에게 장소·시작·종료 세 값을 받고, 서버 규칙인 상태 두 개를 추가하여 Repository에 다섯 값을 전달한다.
+- VehicleStatus.AVAILABLE: 차량의 운영상 대여 가능한 상태. 선택 시간의 예약 가능성까지 보장하지 않는다.
+- ReservationStatus.RESERVED: 생성되어 유지 중인 기존 예약의 상태. 결제 완료나 차량 이용 완료와 다르다. 결제 상태는 별도다.
+- r.status = :reservationStatus에서 DB에 저장된 기존 예약의 status를 RESERVED와 비교한다.
+- RESERVED를 전달한다고 예약된 차량을 결과로 찾는 것이 아니다. NOT EXISTS 안에서 "같은 차량의 RESERVED 예약이며 검색 시간과 겹치는 예약"을 찾아, 그런 예약이 있는 차량을 제외한다.
+- 예: 14~16시 검색 시, RESERVED 15~17시 예약은 차량 제외 사유. CANCELED 15~17시는 제외 사유가 아님. RESERVED 10~12시도 겹치지 않아 제외 사유가 아님.
+- toResponse의 입력은 검색 조건이나 카존 ID가 아니라, DB에서 조회된 Vehicle 한 대다. 조회 → 변환 → 목록 반환을 계속 구분해서 설명한다.
+- 검색은 예약 생성이나 확정이 아니다. 조회 후 다른 사용자가 예약할 수 있으므로 기존 예약 생성의 차량 잠금과 겹침 검사는 유지한다.
+
+## 9. 다음 작업: Controller부터 이어가기
+
+### A. 백엔드 시간 검색 HTTP 입구
+
+- 사용자에게 목적과 값의 흐름을 먼저 설명한 뒤 VehicleController에 메서드 하나를 직접 작성하도록 안내한다.
+- 제안 주소: GET /api/vehicles/available?carZoneId=1&startAt=2026-09-22T14:00:00&endAt=2026-09-22T16:00:00
+- 위 주소는 **다음 단계 제안이며 아직 구현되지 않았다.** 예시 날짜는 테스트 시점의 미래로 바꾼다.
+- Long carZoneId와 LocalDateTime startAt/endAt을 필수 @RequestParam으로 받는다. URL 경로의 @PathVariable과 쿼리 문자열의 @RequestParam 차이를 설명한다.
+- 시간 문자열을 LocalDateTime으로 받을 때 @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)과 필요한 import를 안내하고 실제 변환을 검증한다.
+- 반환형 List<VehicleResponse>, Service.getAvailableVehicles에 세 값을 전달하고 결과 반환.
+- 상태값 AVAILABLE/RESERVED는 클라이언트가 정하지 않고 Service가 전달한다.
+- 기존 /search 및 /carzone/{carZoneId} 조회를 유지한다. 현 보안 정책은 로그인 조회다.
+
+### B. 새 검색 검증
+
+- 최신 소스 컴파일과 실제 JPA 쿼리 초기화/DB 조회를 검증한다. 모의 Repository 테스트만으로 JPQL 정확성을 검증했다고 말하지 않는다.
+- 같은 카존/다른 카존, AVAILABLE/MAINTENANCE, RESERVED/CANCELED, 예약 없음, 겹침/미겹침/완전 포함/양 끝 동일 경계를 확인한다.
+- 정상 결과의 카존·차량 필드, 빈 결과 200 [], 없는 카존 404, 시간 누락·형식 오류·과거·동일·역순 400을 확인한다.
+- 토큰 없음/로그인 사용자 접근을 실제 Security 설정으로 확인한다.
+- 첫 정상 결과 뒤 방학역→노원역→전체 장소 전환, 빠른 선택 변경, 오류/빈 결과 표시를 브라우저에서 확인한다.
+- 기존 테스트 및 프론트 빌드 성공과 새 검색 검증을 구분한다.
+
+### C. 프론트 시간 선택과 API 연동
+
+- 사용자 허용에 따라 Codex가 구현하고 주석·흐름을 설명한다.
+- 시작·종료 시간 state와 datetime-local 입력, 검색 동작을 설계한다. 입력값 문자열 → API 쿼리 파라미터 → LocalDateTime 변환을 설명한다.
+- 현재 새 Repository는 카존 ID 필수다. 시간 검색 시 장소 선택을 필수로 할지, 전체 장소 시간 검색을 추가 지원할지 먼저 범위를 명확히 한다. 현재 쿼리가 이미 전체 장소 검색을 지원한다고 가정하지 않는다.
+- 브라우저 로컬 시간과 서버 LocalDateTime의 해석을 맞춘다. ISO UTC 변환을 무심코 끼워 넣어 시간을 바꾸지 않는다. 첫 버전 시간대 정책을 명확히 하고 검증한다.
+- 새 API 응답을 vehicles state에 저장하고 로딩·빈 결과·오류·이전 요청 결과 처리를 유지한다.
+- 이후 상세→예약 페이지로 검색한 시간 전달, 서버 기준 예상 요금 조회/표시, 예약 시 재검증 흐름을 이어간다. 아직 구현된 것으로 기록하지 않는다.
+
+## 10. 후속 보완 사항 유지
+
+- 실제 DB/JWT/브라우저 검증, 새 JPQL 테스트, 프론트 시간 검색은 남아 있다. 배포 전에 미완료 검증을 수행한다.
+- 예약만 취소할 때 결제 PAID가 남을 수 있는 흐름, 결제·예약 취소 동시성, 관리자 상태 변경·삭제 정책은 기존 기록의 후속 항목으로 유지한다.
+- 조회 트랜잭션·카존 LAZY 접근·추가 쿼리·페이징, 공통 오류/로그인 만료 안내, 반응형 UI, 가상 데이터·Mock 결제 명시, 배포 준비도 남아 있다.
+- 현재는 장소별 탐색과 시간 검색 백엔드를 확장하는 학습용 구현 단계다. 전체 서비스 완성이나 실제 제휴 운영 준비 완료로 표현하지 않는다.
+
+---
+
 # 2026-09-20 최신 학습 기록 및 서비스 개발 방향
 
 ## 1. 다음 대화에서 먼저 읽을 요약
