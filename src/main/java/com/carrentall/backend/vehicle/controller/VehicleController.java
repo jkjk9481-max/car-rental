@@ -9,8 +9,10 @@ import com.carrentall.backend.vehicle.entity.RentalType;
 import com.carrentall.backend.vehicle.entity.VehicleStatus;
 import com.carrentall.backend.vehicle.service.VehicleService;
 import jakarta.validation.Valid;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @RequestMapping("/api/vehicles")
@@ -83,4 +85,11 @@ public class VehicleController {
         // URL의 경로 변수(Path Variable)를 받아오는 어노테이션
         return vehicleService.getVehiclesByCarZone(carZoneId);
     }
+
+    @GetMapping("/available")
+    public List<VehicleResponse> getAvailableVehicles(@RequestParam Long carZoneId , @RequestParam  @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startAt  ,  @RequestParam  @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)  LocalDateTime endAt){
+        return vehicleService.getAvailableVehicles(carZoneId, startAt,  endAt);
+        //  @DateTimeFormat은 날짜·시간을 읽는 형식을 지정한다
+    }
+
 }

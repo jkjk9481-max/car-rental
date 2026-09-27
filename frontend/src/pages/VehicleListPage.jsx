@@ -40,6 +40,11 @@ function VehicleListPage() {
     // 카존 조회 오류
     const [carZoneError , setCarZoneError] = useState("");
 
+    // 입력창의 날짜·시간을 문자열로 기억한다. 아직 API 전송이나 DB 저장은 하지 않는다.
+    const [startAt , setStartAt] = useState("");
+
+    const [endAt , setEndAt] = useState("");
+
     // errorMessage:
     // - 차량 목록 조회 실패 시 화면에 보여줄 에러 메시지
     //
@@ -206,6 +211,28 @@ function VehicleListPage() {
                 </select>
                 {/* 오류 문자열이 있을 때만 메시지를 표시한다. */}
                 {carZoneError && <p role="alert">{carZoneError}</p>}
+            </div>
+
+            <div>
+                <label htmlFor="start-at">대여 시작 시간</label>
+                {/* value는 state를 화면에 표시하고, onChange는 입력값을 state에 저장한다. */}
+                <input
+                    id="start-at"
+                    type="datetime-local"
+                    value={startAt}
+                    onChange={(event) => setStartAt(event.target.value)}
+                />
+            </div>
+
+            <div>
+                <label htmlFor="end-at">반납 시간</label>
+                {/* event.target.value는 사용자가 변경한 입력창의 현재 값이다. */}
+                <input
+                    id="end-at"
+                    type="datetime-local"
+                    value={endAt}
+                    onChange={(event) => setEndAt(event.target.value)}
+                />
             </div>
 
             {/* 로딩 중에도 장소 선택 상자는 유지해 다른 장소를 선택할 수 있다. */}

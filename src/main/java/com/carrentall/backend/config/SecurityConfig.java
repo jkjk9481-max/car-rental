@@ -45,7 +45,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/signup", "/api/auth/login").permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.POST , "/api/vehicles").hasRole("ADMIN")
-                        // 요청 주소가 /api/vehiclesㅇ면 이 규칙을 허용하겠다 ( POST , GET ) 조건 X ,
+                        // 요청 주소가 /api/vehicles이면 이 규칙을 허용하겠다 ( POST , GET ) 조건 X ,
                         //  주소가 /api/vehicles이고, 요청 방식이 POST인 경우에만 이 규칙을 적용해서 ADMIN 권한을 요구한다.
                         .requestMatchers(HttpMethod.PUT , "/api/vehicles/*").hasRole("ADMIN")
                         // *는 한경로만 포함
