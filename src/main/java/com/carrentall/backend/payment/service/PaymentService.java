@@ -43,7 +43,7 @@ public class PaymentService {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("해당 사용자를 찾을 수 없습니다."));
 
-        Reservation reservation = reservationRepository.findById(reservationId)
+        Reservation reservation = reservationRepository.findWithLockById(reservationId)
                 .orElseThrow(() -> new ReservationNotFoundException("예약을 찾을 수 없습니다."));
 
         if (!reservation.getUser().getId().equals(user.getId())) {

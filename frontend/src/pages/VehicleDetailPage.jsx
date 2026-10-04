@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 // - 페이지가 처음 열렸을 때 특정 코드를 실행할 때 사용
 // - 여기서는 차량 상세 API를 호출할 때 사용
 
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 // useParams:
 // - URL 주소에 들어있는 값을 꺼낼 때 사용
 // - 예: /vehicles/1 에서 1을 꺼냄
@@ -17,6 +17,7 @@ import { useNavigate, useParams } from "react-router-dom";
 // - 예: 차량 목록으로 돌아가기
 
 import axiosInstance from "../api/axiosInstance";
+import { createTimeSearch, readTimeSearch } from "../utils/reservationTime";
 // axiosInstance:
 // - 백엔드 API를 호출하기 위해 만든 도구
 // - baseURL이 http://localhost:8080으로 설정되어 있다면
@@ -42,6 +43,12 @@ function VehicleDetailPage() {
     // 페이지 이동 함수
     // navigate("/vehicles")를 실행하면 차량 목록 페이지로 이동함
     const navigate = useNavigate();
+
+    // useParams는 경로의 차량 ID, useSearchParams는 ? 뒤의 시간 조건을 읽는다.
+    // 이 값은 화면 사이에서 전달받은 조건일 뿐, 서버의 예약 확정 응답이 아니다.
+    const [searchParams] = useSearchParams();
+    const searchTime = readTimeSearch(searchParams);
+    const timeSearch = createTimeSearch(searchTime.startAt, searchTime.endAt);
 
     // vehicle:
     // - 백엔드에서 받아온 차량 상세 정보를 저장하는 state
@@ -175,15 +182,30 @@ function VehicleDetailPage() {
             <p>시간당 요금: {vehicle.hourlyRate}원</p>
             <p>일일 요금: {vehicle.dailyRate}원</p>
 
+            {/* 정상적인 시간만 표시한다. 직접 접속하거나 잘못된 URL이면 다시 입력하도록 안내한다. */}
+            <section aria-label="대여 시간">
+                {searchTime.startAt ? (
+                    <>
+                        <p>대여 시작: {searchTime.startAt.replace("T", " ")}</p>
+                        <p>반납: {searchTime.endAt.replace("T", " ")}</p>
+                        <p>예약 가능 여부는 예약 생성 시 다시 확인합니다.</p>
+                    </>
+                ) : (
+                    <p role={searchTime.message ? "alert" : undefined}>
+                        {searchTime.message
+                            ? `전달된 시간을 사용할 수 없습니다. ${searchTime.message}`
+                            : "예약 화면에서 대여 시간을 선택해 주세요."}
+                    </p>
+                )}
+            </section>
+
             {/* 차량 목록 페이지로 돌아가는 버튼 */}
             <button type="button" onClick={() => navigate("/vehicles")}>
                 차량 목록으로 돌아가기
             </button>
 
-            {/* 다음 단계에서 여기에 예약하기 버튼을 추가할 예정 */}
-            {/* 예: 예약 페이지로 이동 */}
-
-            <button type="button" onClick={() => navigate(`/vehicles/${vehicle.id}/reservation`)}>
+            {/* 검증된 시간을 예약 화면 URL에도 붙인다. 여기서는 예약 저장 요청을 보내지 않는다. */}
+            <button type="button" onClick={() => navigate(`/vehicles/${vehicle.id}/reservation${timeSearch}`)}>
                 예약하기
             </button>
         </main>

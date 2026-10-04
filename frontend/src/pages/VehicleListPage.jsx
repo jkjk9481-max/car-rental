@@ -13,6 +13,7 @@ import { Link } from "react-router-dom";
 // - 예: 차량 목록에서 "상세 보기"를 누르면 /vehicles/1 로 이동
 
 import axiosInstance from "../api/axiosInstance";
+import { createTimeSearch } from "../utils/reservationTime";
 // axiosInstance:
 // - 백엔드 API 호출 도구
 // - baseURL이 http://localhost:8080이면
@@ -40,7 +41,7 @@ function VehicleListPage() {
     // 카존 조회 오류
     const [carZoneError , setCarZoneError] = useState("");
 
-    // 입력창의 날짜·시간을 문자열로 기억한다. 아직 API 전송이나 DB 저장은 하지 않는다.
+    // 입력값은 브라우저에만 기억한다. 검색 버튼을 눌러야 검색 조건으로 전달된다.
     const [startAt , setStartAt] = useState("");
 
     const [endAt , setEndAt] = useState("");
@@ -65,14 +66,63 @@ function VehicleListPage() {
     // ""는 전체 장소를 뜻한다. select에서 읽는 ID는 "1"처럼 문자열이다.
     const [selectedCarZoneId, setSelectedCarZoneId] = useState("");
 
+    // 입력 중인 값과 실제 조회에 적용한 조건을 분리한다.
+    // 처음에는 전체 목록, 장소 변경 시 장소 목록, 검색 제출 시 시간 검색을 요청한다.
+    // 차량 요청은 아래 useEffect 한 곳에서 처리해 서로 다른 요청이 목록을 덮어쓰지 않게 한다.
+    const [query, setQuery] = useState({ carZoneId: "" });
+    const [validationMessage, setValidationMessage] = useState("");
+
     // onChange가 전달한 event에서 새 선택값을 꺼내 React state에 저장한다.
     // state가 바뀌면 React가 화면을 다시 계산하고 select의 선택 표시도 바뀐다.
     const handleCarZoneChange = (event) => {
         setSelectedCarZoneId(event.target.value);
+        setValidationMessage("");
+        setQuery({ carZoneId: event.target.value });
+    };
+
+    // form 제출은 검색 버튼 클릭과 Enter 입력을 모두 처리한다.
+    const handleSearch = (event) => {
+        event.preventDefault(); // 브라우저의 기본 form 제출에 따른 새로고침을 막는다.
+        setValidationMessage("");
+
+        // 잘못된 입력이면 여기서 종료한다. 서버도 동일한 업무 규칙을 다시 검증한다.
+        if (!selectedCarZoneId) {
+            setValidationMessage("시간 검색을 하려면 대여 장소를 선택해 주세요.");
+            return;
+        }
+        if (!startAt || !endAt) {
+            setValidationMessage("대여 시작 시간과 반납 시간을 모두 입력해 주세요.");
+            return;
+        }
+        const startTime = new Date(startAt).getTime();
+        const endTime = new Date(endAt).getTime();
+        if (!Number.isFinite(startTime) || !Number.isFinite(endTime)) {
+            setValidationMessage("올바른 날짜와 시간을 입력해 주세요.");
+            return;
+        }
+        if (startTime >= endTime) {
+            setValidationMessage("반납 시간은 대여 시작 시간보다 늦어야 합니다.");
+            return;
+        }
+        if (startTime <= Date.now()) {
+            setValidationMessage("대여 시작 시간은 현재 시간보다 늦어야 합니다.");
+            return;
+        }
+
+        // 버튼을 누른 시점의 값을 복사한다. 이후 입력을 바꿔도 적용된 조건은 유지된다.
+        // GET 조회용 조건이며, 이 작업으로 예약이 생성되거나 DB에 저장되지는 않는다.
+        setQuery({ carZoneId: selectedCarZoneId, startAt, endAt });
+    };
+
+    const handleResetSearch = () => {
+        setStartAt("");
+        setEndAt("");
+        setValidationMessage("");
+        setQuery({ carZoneId: selectedCarZoneId });
     };
 
     // useEffect:
-    // - 처음 화면에 들어왔을 때와 선택한 카존 ID가 바뀔 때 실행됨
+    // - 처음 화면에 들어왔을 때와 실제 조회 조건(query)이 바뀔 때 실행됨
     // - 차량 목록은 사용자가 버튼을 누르지 않아도 바로 보여야 하니까 여기서 API 호출
     useEffect(() => {
         // 장소를 바꾸거나 페이지를 떠나면 이전 요청의 결과는 사용하지 않는다.
@@ -96,10 +146,20 @@ function VehicleListPage() {
                 // axiosInstance가 Authorization 헤더를 자동으로 붙여줌
                 // 빈 문자열이면 전체 조회, ID가 있으면 해당 장소의 차량 조회다.
                 // 백틱 문자열의 ${...} 자리에 실제 선택한 ID가 들어간다.
-                const url = selectedCarZoneId === ""
-                    ? "/api/vehicles"
-                    : `/api/vehicles/carzone/${selectedCarZoneId}`;
-                const response = await axiosInstance.get(url);
+                const url = query.startAt
+                    ? "/api/vehicles/available"
+                    : query.carZoneId === ""
+                        ? "/api/vehicles"
+                        : `/api/vehicles/carzone/${query.carZoneId}`;
+                // axios의 params는 URL의 ? 뒤 검색 조건으로 변환된다.
+                // 날짜 문자열은 datetime-local 형식 그대로 보낸다. UTC로 변환하지 않는다.
+                const response = await axiosInstance.get(url, {
+                    params: query.startAt ? {
+                        carZoneId: query.carZoneId,
+                        startAt: query.startAt,
+                        endAt: query.endAt,
+                    } : undefined,
+                });
                 if (ignore) return;
 
                 // response.data:
@@ -135,7 +195,18 @@ function VehicleListPage() {
                 console.error(error);
 
                 // 화면에 보여줄 에러 메시지 저장
-                setErrorMessage("차량 목록을 불러오지 못했습니다.");
+                const status = error.response?.status;
+                const data = error.response?.data;
+                if (status === 401 || status === 403) {
+                    setErrorMessage("로그인 상태와 접근 권한을 확인해 주세요.");
+                } else if (status >= 400 && status < 500) {
+                    // 서버는 문자열 또는 { message: ... } 형태로 오류를 보낼 수 있다.
+                    const message = typeof data === "string" ? data : data?.message;
+                    setErrorMessage(typeof message === "string" && message
+                        ? message : "검색 조건을 확인해 주세요.");
+                } else {
+                    setErrorMessage("차량 목록을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
+                }
             } finally {
                 // 성공하거나 실패해도 차량 요청은 끝났으므로 로딩을 종료한다.
                 // false로 바꾸면 React가 화면을 다시 계산해 아래의 목록/오류 화면을 표시한다.
@@ -151,8 +222,8 @@ function VehicleListPage() {
         return () => {
             ignore = true;
         };
-    }, [selectedCarZoneId]);
-    // 배열에 넣은 selectedCarZoneId가 바뀌면 차량 목록을 다시 요청한다.
+    }, [query]);
+    // 입력창만 수정할 때는 요청하지 않는다. setQuery로 조회 조건을 바꿀 때 요청한다.
 
     // 차량 목록과 별도로, 장소 선택에 사용할 카존 목록을 불러온다.
     useEffect(() => {
@@ -188,63 +259,82 @@ function VehicleListPage() {
         <main>
             <h1>차량 목록</h1>
 
-            <div>
-                {/* htmlFor와 select의 id를 같게 지정해 라벨과 선택 상자를 연결한다. */}
-                <label htmlFor="car-zone">대여 장소</label>
-                {/* value는 현재 선택값, onChange는 선택을 바꿀 때 실행할 함수다.
-                    함수 이름만 전달하면 사용자가 선택을 바꿀 때 React가 호출한다. */}
-                <select
-                    id="car-zone"
-                    value={selectedCarZoneId}
-                    onChange={handleCarZoneChange}
-                >
-                    <option value="">전체 장소</option>
-                    {/* map은 카존 하나마다 option 하나를 만든다.
-                        화살표 뒤의 (...)는 그 안의 JSX를 바로 반환한다. */}
-                    {carZones.map((carZone) => (
-                        // key는 React의 항목 구분용, value는 선택했을 때 읽을 값이다.
-                        // 중괄호 안의 carZone.name은 해당 카존의 실제 이름으로 표시된다.
-                        <option key={carZone.id} value={carZone.id}>
-                            {carZone.name}
-                        </option>
-                    ))}
-                </select>
-                {/* 오류 문자열이 있을 때만 메시지를 표시한다. */}
-                {carZoneError && <p role="alert">{carZoneError}</p>}
-            </div>
+            {/* noValidate로 기본 브라우저 경고 대신 handleSearch의 안내 문구를 사용한다. */}
+            <form onSubmit={handleSearch} noValidate>
+                <div>
+                    {/* htmlFor와 select의 id를 같게 지정해 라벨과 선택 상자를 연결한다. */}
+                    <label htmlFor="car-zone">대여 장소</label>
+                    {/* value는 현재 선택값, onChange는 선택을 바꿀 때 실행할 함수다.
+                        함수 이름만 전달하면 사용자가 선택을 바꿀 때 React가 호출한다. */}
+                    <select
+                        id="car-zone"
+                        value={selectedCarZoneId}
+                        onChange={handleCarZoneChange}
+                    >
+                        <option value="">전체 장소</option>
+                        {/* map은 카존 하나마다 option 하나를 만든다.
+                            화살표 뒤의 (...)는 그 안의 JSX를 바로 반환한다. */}
+                        {carZones.map((carZone) => (
+                            // key는 React의 항목 구분용, value는 선택했을 때 읽을 값이다.
+                            // 중괄호 안의 carZone.name은 해당 카존의 실제 이름으로 표시된다.
+                            <option key={carZone.id} value={carZone.id}>
+                                {carZone.name}
+                            </option>
+                        ))}
+                    </select>
+                    {/* 오류 문자열이 있을 때만 메시지를 표시한다. */}
+                    {carZoneError && <p role="alert">{carZoneError}</p>}
+                </div>
 
-            <div>
-                <label htmlFor="start-at">대여 시작 시간</label>
-                {/* value는 state를 화면에 표시하고, onChange는 입력값을 state에 저장한다. */}
-                <input
-                    id="start-at"
-                    type="datetime-local"
-                    value={startAt}
-                    onChange={(event) => setStartAt(event.target.value)}
-                />
-            </div>
+                <div>
+                    <label htmlFor="start-at">대여 시작 시간</label>
+                    {/* value는 state를 화면에 표시하고, onChange는 입력값을 state에 저장한다. */}
+                    <input
+                        id="start-at"
+                        type="datetime-local"
+                        value={startAt}
+                        onChange={(event) => setStartAt(event.target.value)}
+                    />
+                </div>
 
-            <div>
-                <label htmlFor="end-at">반납 시간</label>
-                {/* event.target.value는 사용자가 변경한 입력창의 현재 값이다. */}
-                <input
-                    id="end-at"
-                    type="datetime-local"
-                    value={endAt}
-                    onChange={(event) => setEndAt(event.target.value)}
-                />
-            </div>
+                <div>
+                    <label htmlFor="end-at">반납 시간</label>
+                    {/* event.target.value는 사용자가 변경한 입력창의 현재 값이다. */}
+                    <input
+                        id="end-at"
+                        type="datetime-local"
+                        value={endAt}
+                        onChange={(event) => setEndAt(event.target.value)}
+                    />
+                </div>
+
+                {validationMessage && <p role="alert">{validationMessage}</p>}
+                <button type="submit" disabled={loading}>
+                    {loading ? "조회 중..." : "차량 검색"}
+                </button>
+                {/* type="button"은 검색 form을 제출하지 않고 초기화 함수만 실행한다. */}
+                <button type="button" onClick={handleResetSearch}>시간 조건 초기화</button>
+            </form>
+
+            {/* 입력창을 수정해도 현재 목록에 적용된 조건을 명확히 보여 준다. */}
+            <p>
+                {query.startAt
+                    ? `조회 시간: ${query.startAt.replace("T", " ")} ~ ${query.endAt.replace("T", " ")}. 시간을 바꾸면 차량 검색을 다시 눌러 주세요.`
+                    : "시간 조건이 적용되지 않은 차량 목록입니다."}
+            </p>
 
             {/* 로딩 중에도 장소 선택 상자는 유지해 다른 장소를 선택할 수 있다. */}
             {loading && <p role="status">차량 목록을 불러오는 중입니다...</p>}
             {/* 에러 메시지가 있으면 화면에 출력 */}
-            {errorMessage && <p>{errorMessage}</p>}
+            {errorMessage && <p role="alert">{errorMessage}</p>}
 
             {/* 차량 목록이 비어 있고, 에러도 없으면 빈 목록 메시지 출력 */}
             {!loading && vehicles.length === 0 && !errorMessage && (
-                <p>{selectedCarZoneId === ""
-                    ? "등록된 차량이 없습니다."
-                    : "선택한 장소에 등록된 차량이 없습니다."}</p>
+                <p>{query.startAt
+                    ? "선택한 장소와 시간에 예약 가능한 차량이 없습니다."
+                    : query.carZoneId === ""
+                        ? "등록된 차량이 없습니다."
+                        : "선택한 장소에 등록된 차량이 없습니다."}</p>
             )}
 
             <div>
@@ -274,7 +364,10 @@ function VehicleListPage() {
 
                             {/* 상세 보기 클릭 시 /vehicles/{vehicleId} 로 이동 */}
                             {/* 예: vehicleId가 1이면 /vehicles/1 로 이동 */}
-                            <Link to={`/vehicles/${vehicleId}`}>
+                            {/* 입력창 값(startAt)이 아니라 실제 조회에 사용한 query의 시간을 전달한다.
+                                검색 후 입력창만 바꿔도 기존 검색 결과와 시간 조건이 일치하도록 한다.
+                                URL에 담기므로 상세 화면에서 새로고침해도 검색 시간이 남는다. */}
+                            <Link to={`/vehicles/${vehicleId}${createTimeSearch(query.startAt, query.endAt)}`}>
                                 상세 보기
                             </Link>
                         </div>

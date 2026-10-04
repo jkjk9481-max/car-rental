@@ -5,9 +5,13 @@ import com.carrentall.backend.reservation.entity.Reservation;
 import com.carrentall.backend.reservation.entity.ReservationStatus;
 import com.carrentall.backend.user.entity.User;
 import com.carrentall.backend.vehicle.entity.Vehicle;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 public interface ReservationRepository extends JpaRepository<Reservation, Long> {
 
@@ -24,6 +28,11 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long> 
             LocalDateTime endAt,
             LocalDateTime startAt
     );
+
+    // 같은 예약의 결제와 예약 취소를 순서대로 처리하기 위한 잠금 조회
+    @Lock(LockModeType.PESSIMISTIC_WRITE) // “이 예약을 조회하면서 DB에 잠금을 걸어, 다른 요청이 동시에 변경하지 못하도록 하겠다
+    // 서버의 검사·저장 작업이 끝날 때까지 대기
+    Optional<Reservation> findWithLockById(Long id);
 
 
 }

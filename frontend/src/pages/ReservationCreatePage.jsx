@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 // useState:
 // - 사용자가 입력한 예약 시작 시간, 종료 시간을 기억하기 위해 사용
 // - 에러 메시지, 성공 메시지도 기억함
 
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 // useParams:
 // - URL 주소에서 vehicleId 값을 꺼낼 때 사용
 // - 예: /vehicles/1/reservation 에서 1을 꺼냄
@@ -13,6 +13,7 @@ import { useNavigate, useParams } from "react-router-dom";
 // - 차량 상세 페이지로 돌아갈 때도 사용
 
 import axiosInstance from "../api/axiosInstance";
+import { createTimeSearch, readTimeSearch, validateReservationTime } from "../utils/reservationTime";
 // axiosInstance:
 // - 백엔드 API 호출 도구
 // - localStorage에 accessToken이 있으면 Authorization 헤더를 자동으로 붙여줌
@@ -28,14 +29,30 @@ function ReservationCreatePage() {
     // 페이지 이동 함수
     const navigate = useNavigate();
 
+    // 상세 화면이 URL에 담아 준 시간을 읽는다. 새로고침해도 URL의 값은 유지된다.
+    const [searchParams] = useSearchParams();
+    const initialTime = readTimeSearch(searchParams);
+
     // startAt:
     // - 예약 시작 시간
     // - input type="datetime-local"에서 사용자가 입력한 값이 들어감
-    const [startAt, setStartAt] = useState("");
+    const [startAt, setStartAt] = useState(initialTime.startAt);
 
     // endAt:
     // - 예약 종료 시간
-    const [endAt, setEndAt] = useState("");
+    const [endAt, setEndAt] = useState(initialTime.endAt);
+
+    // URL에서 받은 값은 초기값이며, 사용자는 아래 입력창에서 자유롭게 수정할 수 있다.
+    const [timeNotice, setTimeNotice] = useState(initialTime.message);
+
+    // 뒤로/앞으로 이동하여 같은 예약 화면의 URL 조건이 바뀌는 경우도 반영한다.
+    // 입력창 수정은 URL을 바꾸지 않으므로 사용자가 입력 중인 값을 덮어쓰지 않는다.
+    useEffect(() => {
+        const received = readTimeSearch(searchParams);
+        setStartAt(received.startAt);
+        setEndAt(received.endAt);
+        setTimeNotice(received.message);
+    }, [searchParams, vehicleId]);
 
     // errorMessage:
     // - 예약 실패 시 화면에 보여줄 에러 메시지
@@ -53,6 +70,14 @@ function ReservationCreatePage() {
         // 이전 에러/성공 메시지 초기화
         setErrorMessage("");
         setSuccessMessage("");
+
+        // 전달받은 뒤 시간이 지났거나 사용자가 수정했을 수 있어 제출 시 다시 검사한다.
+        const timeError = validateReservationTime(startAt, endAt);
+        if (timeError) {
+            setErrorMessage(timeError);
+            return;
+        }
+        setTimeNotice("");
 
         try {
             // 백엔드 예약 생성 API 호출
@@ -78,8 +103,7 @@ function ReservationCreatePage() {
             // 개발자 도구 Console에서 응답 확인
             console.log("예약 생성 결과:", response.data);
 
-            // 잠깐 성공 메시지를 보여준 뒤 차량 목록으로 이동
-            // 나중에 내 예약 목록 페이지를 만들면 "/reservations/my"로 바꿀 예정
+            // 잠깐 성공 메시지를 보여준 뒤 내 예약 목록으로 이동한다.
             setTimeout(() => {
                 navigate("/reservations/my");
             }, 500);
@@ -120,8 +144,12 @@ function ReservationCreatePage() {
             {/* 지금 어떤 차량을 예약하는지 확인용 */}
             <p>차량 ID: {vehicleId}</p>
 
+            <p>검색 시간이 전달되면 아래에 자동으로 채워집니다. 필요하면 수정해 주세요.</p>
+            <p>예약 생성 시 선택한 시간의 예약 가능 여부를 다시 확인합니다.</p>
+            {timeNotice && <p role="alert">전달된 시간을 다시 입력해 주세요. {timeNotice}</p>}
+
             {/* 예약 생성 form */}
-            <form onSubmit={handleCreateReservation}>
+            <form onSubmit={handleCreateReservation} noValidate>
                 <div>
                     <label htmlFor="startAt">예약 시작 시간</label>
                     <input
@@ -145,7 +173,7 @@ function ReservationCreatePage() {
                 </div>
 
                 {/* 에러 메시지가 있으면 화면에 출력 */}
-                {errorMessage && <p>{errorMessage}</p>}
+                {errorMessage && <p role="alert">{errorMessage}</p>}
 
                 {/* 성공 메시지가 있으면 화면에 출력 */}
                 {successMessage && <p>{successMessage}</p>}
@@ -153,10 +181,15 @@ function ReservationCreatePage() {
                 <button type="submit">예약 생성</button>
             </form>
 
-            {/* 차량 상세 페이지로 돌아가기 */}
+            {/* 수정한 시간이 유효하면 상세로 돌아갈 때도 함께 전달한다.
+                잘못된 값은 넘기지 않으며, 서버 요청이나 예약 저장은 발생하지 않는다. */}
             <button
                 type="button"
-                onClick={() => navigate(`/vehicles/${vehicleId}`)}
+                onClick={() => {
+                    const timeSearch = validateReservationTime(startAt, endAt)
+                        ? "" : createTimeSearch(startAt, endAt);
+                    navigate(`/vehicles/${vehicleId}${timeSearch}`);
+                }}
             >
                 차량 상세로 돌아가기
             </button>

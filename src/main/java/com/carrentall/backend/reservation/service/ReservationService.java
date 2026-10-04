@@ -1,6 +1,8 @@
 package com.carrentall.backend.reservation.service;
 
 
+import com.carrentall.backend.payment.entity.PaymentStatus;
+import com.carrentall.backend.payment.repository.PaymentRepository;
 import com.carrentall.backend.reservation.dto.ReservationCreateRequest;
 import com.carrentall.backend.reservation.dto.ReservationResponse;
 import com.carrentall.backend.reservation.entity.Reservation;
@@ -27,11 +29,13 @@ public class ReservationService {
     private final ReservationRepository reservationRepository; // 예약 저장
     private final UserRepository userRepository; // 이메일로 로그인 사용자 조회
     private final VehicleRepository vehicleRepository; // ID로 예약 차량 조회
+    private final PaymentRepository paymentRepository;
 
-    public ReservationService(ReservationRepository reservationRepository, UserRepository userRepository, VehicleRepository vehicleRepository) {
+    public ReservationService(ReservationRepository reservationRepository, UserRepository userRepository, VehicleRepository vehicleRepository ,  PaymentRepository paymentRepository) {
         this.reservationRepository = reservationRepository;
         this.userRepository = userRepository;
         this.vehicleRepository = vehicleRepository;
+        this.paymentRepository = paymentRepository;
     }
 
     private ReservationResponse toResponse(Reservation reservation) {
@@ -136,7 +140,7 @@ public class ReservationService {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("사용자가 존재하지 않습니다."));
 
-        Reservation reservation = reservationRepository.findById(reservationId)
+        Reservation reservation = reservationRepository.findWithLockById(reservationId)
                 .orElseThrow(() -> new ReservationNotFoundException("예약을 찾을 수 없습니다."));
 
         if(!reservation.getUser().getId().equals(user.getId())){
@@ -145,6 +149,13 @@ public class ReservationService {
 
         if(!ReservationStatus.RESERVED.equals(reservation.getStatus())){
             throw new ReservationCannotCancelException("예약을 취소 할 수 없습니다.");
+        }
+
+        boolean paymentExists = paymentRepository.existsByReservationAndStatus(reservation , PaymentStatus.PAID);
+        // 지금 취소하려는 예약에 연결된 결제 중, 상태가 PAID인 결제가 존재하는가?
+
+        if(paymentExists){
+            throw new ReservationCannotCancelException("결제된 예약입니다. 결제 취소를 이용해 주세요.");
         }
 
         reservation.cancel();
