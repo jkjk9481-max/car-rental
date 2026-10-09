@@ -60,6 +60,7 @@ class ReservationTimeConflictTest {
         // 과거 시간 예약은 Service가 거절하므로 "내일"을 기준으로 시간을 만든다.
         tomorrow10 = LocalDateTime.now().plusDays(1)
                 .withHour(10).withMinute(0).withSecond(0).withNano(0);
+
     }
 
     // 테스트 이름만 읽어도 "무엇을 하면 어떻게 되어야 하는지" 알 수 있게 짓는다.
@@ -102,4 +103,6 @@ class ReservationTimeConflictTest {
         ReflectionTestUtils.setField(request, "endAt", endAt);
         return request;
     }
+
+
 }
