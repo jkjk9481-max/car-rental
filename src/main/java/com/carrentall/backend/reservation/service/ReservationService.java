@@ -4,6 +4,7 @@ package com.carrentall.backend.reservation.service;
 import com.carrentall.backend.payment.entity.PaymentStatus;
 import com.carrentall.backend.payment.repository.PaymentRepository;
 import com.carrentall.backend.reservation.dto.ReservationCreateRequest;
+import com.carrentall.backend.reservation.dto.ReservationEstimateResponse;
 import com.carrentall.backend.reservation.dto.ReservationResponse;
 import com.carrentall.backend.reservation.entity.Reservation;
 import com.carrentall.backend.reservation.entity.ReservationStatus;
@@ -205,6 +206,30 @@ public class ReservationService {
         //  1. reservationRepository.findAll()로 전체 예약 조회
         //  2. 각각의 Reservation을 ReservationResponse로 변환
         //  3. List<ReservationResponse> 반환
+    }
+
+    @Transactional(readOnly = true)
+    public ReservationEstimateResponse estimateReservationPrice(Long vehicleId , LocalDateTime startAt , LocalDateTime endAt){
+        if(startAt == null){
+            throw new InvalidReservationTimeException("시작 시간을 정해주세요.");
+        }if(endAt == null) {
+            throw new InvalidReservationTimeException("반납 시간을 정해주세요.");
+        }
+        if(!startAt.isBefore(endAt)){
+            throw new InvalidReservationTimeException("예약 시작 시간은 종료 시간보다 이전이어야 합니다.");
+        }if(startAt.isBefore(LocalDateTime.now())){
+            throw new InvalidReservationTimeException("과거 시간으로 예약할 수 없습니다.");
+        }
+
+        Vehicle vehicle = vehicleRepository.findById(vehicleId)
+                .orElseThrow(() -> new VehicleNotFoundException("해당 차량이 존재하지 않습니다"));
+
+        Long totalPrice = calculateTotalPrice(vehicle , startAt , endAt);
+
+        ReservationEstimateResponse response = new ReservationEstimateResponse(vehicleId , startAt , endAt , totalPrice);
+
+        return response;
+
     }
 
 

@@ -45,6 +45,11 @@ function ReservationCreatePage() {
     // URL에서 받은 값은 초기값이며, 사용자는 아래 입력창에서 자유롭게 수정할 수 있다.
     const [timeNotice, setTimeNotice] = useState(initialTime.message);
 
+    // 예상 요금 응답, 조회 중 상태, 조회 오류를 각각 화면 state에 보관한다.
+    const [priceEstimate, setPriceEstimate] = useState(null);
+    const [estimatingPrice, setEstimatingPrice] = useState(false);
+    const [estimateError, setEstimateError] = useState("");
+
     // 뒤로/앞으로 이동하여 같은 예약 화면의 URL 조건이 바뀌는 경우도 반영한다.
     // 입력창 수정은 URL을 바꾸지 않으므로 사용자가 입력 중인 값을 덮어쓰지 않는다.
     useEffect(() => {
@@ -53,6 +58,40 @@ function ReservationCreatePage() {
         setEndAt(received.endAt);
         setTimeNotice(received.message);
     }, [searchParams, vehicleId]);
+
+    // 예상 요금은 조회 버튼을 눌렀을 때만 서버에 요청한다.
+    const handleEstimatePrice = async () => {
+        setEstimateError("");
+        setPriceEstimate(null);
+
+        // 브라우저에서 먼저 안내하고, 서버 Service도 같은 조건을 다시 검증한다.
+        const timeError = validateReservationTime(startAt, endAt);
+        if (timeError) {
+            setEstimateError(timeError);
+            return;
+        }
+
+        try {
+            setEstimatingPrice(true);
+            // GET 조회 요청: 차량 ID와 대여 시간을 쿼리 파라미터로 보낸다.
+            // 서버 응답의 data에는 vehicleId, startAt, endAt, totalPrice가 들어온다.
+            const response = await axiosInstance.get("/api/reservations/estimate", {
+                params: {
+                    vehicleId: Number(vehicleId),
+                    startAt,
+                    endAt,
+                },
+            });
+            setPriceEstimate(response.data);
+        } catch (error) {
+            console.error(error);
+            const data = error.response?.data;
+            const message = typeof data === "string" ? data : data?.message;
+            setEstimateError(message || "예상 요금을 조회하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+        } finally {
+            setEstimatingPrice(false);
+        }
+    };
 
     // errorMessage:
     // - 예약 실패 시 화면에 보여줄 에러 메시지
@@ -156,7 +195,13 @@ function ReservationCreatePage() {
                         id="startAt"
                         type="datetime-local"
                         value={startAt}
-                        onChange={(event) => setStartAt(event.target.value)}
+                        disabled={estimatingPrice}
+                        onChange={(event) => {
+                            setStartAt(event.target.value);
+                            // 시간 입력이 바뀌면 이전 조건으로 받은 예상 요금은 지운다.
+                            setPriceEstimate(null);
+                            setEstimateError("");
+                        }}
                         required
                     />
                 </div>
@@ -167,10 +212,29 @@ function ReservationCreatePage() {
                         id="endAt"
                         type="datetime-local"
                         value={endAt}
-                        onChange={(event) => setEndAt(event.target.value)}
+                        disabled={estimatingPrice}
+                        onChange={(event) => {
+                            setEndAt(event.target.value);
+                            setPriceEstimate(null);
+                            setEstimateError("");
+                        }}
                         required
                     />
                 </div>
+
+                {/* 예상 요금 조회는 GET 요청이라 예약을 생성하거나 저장하지 않는다. */}
+                <button type="button" onClick={handleEstimatePrice} disabled={estimatingPrice}>
+                    {estimatingPrice ? "요금 계산 중..." : "예상 요금 조회"}
+                </button>
+                {estimateError && <p role="alert">{estimateError}</p>}
+                {priceEstimate && (
+                    <section aria-live="polite">
+                        <h2>예상 요금</h2>
+                        <p>대여 시간: {priceEstimate.startAt.replace("T", " ")}</p>
+                        <p>반납 시간: {priceEstimate.endAt.replace("T", " ")}</p>
+                        <p>예상 총요금: {Number(priceEstimate.totalPrice).toLocaleString("ko-KR")}원</p>
+                    </section>
+                )}
 
                 {/* 에러 메시지가 있으면 화면에 출력 */}
                 {errorMessage && <p role="alert">{errorMessage}</p>}

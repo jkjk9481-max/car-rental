@@ -1,12 +1,15 @@
 package com.carrentall.backend.reservation.controller;
 
 import com.carrentall.backend.reservation.dto.ReservationCreateRequest;
+import com.carrentall.backend.reservation.dto.ReservationEstimateResponse;
 import com.carrentall.backend.reservation.dto.ReservationResponse;
 import com.carrentall.backend.reservation.service.ReservationService;
 import jakarta.validation.Valid;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @RestController // 메서드 반환값을 JSON 응답으로 전달
@@ -72,6 +75,11 @@ public class ReservationController {
         //  → 내 예약이면 ReservationResponse 반환
     }
 
+    @GetMapping("/estimate")
+    public ReservationEstimateResponse estimateReservationPrice(@RequestParam Long vehicleId , @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startAt , @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endAt){
+        return reservationService.estimateReservationPrice(vehicleId , startAt , endAt);
+    }
+
     @PatchMapping("/{reservationId}/cancel")
     public ReservationResponse cancelReservation(@PathVariable Long reservationId , Authentication authentication) {
         String email =  authentication.getName();
@@ -83,4 +91,6 @@ public class ReservationController {
         //  → reservationService.cancelReservation(reservationId, email)
         //  → ReservationResponse 반환
     }
+
+
 }
