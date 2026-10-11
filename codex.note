@@ -7,7 +7,8 @@
 
 - 아래 2026-10-09 기록보다 이 기록이 최신이다.
 - 자동화 테스트 3종(① 예약 시간 충돌 거부 ② 동시 예약 ③ 타인 예약 접근 거부) 전부 완료.
-- 다음 작업은 README/ERD/API 문서 → 프론트 API 주소 환경변수 분리 → 시드 데이터 → 반응형 확인 → 배포 순서.
+- README.md, ERD.md, API.md 작성 완료.
+- 다음 작업은 프론트 API 주소 환경변수 분리 → 시드 데이터 → 반응형 확인 → 배포 순서.
 
 ## 1. 구현·테스트됨 (사용자가 직접 작성, Codex는 개념을 아주 잘게 쪼개 단계별로만 설명)
 
@@ -18,18 +19,23 @@
   - 이 테스트는 `ReservationService.createReservation`이 이미 쓰고 있던 `vehicleRepository.findWithLockById`(비관적 락, PESSIMISTIC_WRITE)가 실제로 동시 요청 중 하나만 통과시키는지를 검증한 것이며, 새로 구현한 서비스 로직은 없다.
   - `./gradlew test --tests ReservationConcurrencyTest` 실행 확인: BUILD SUCCESSFUL.
 - 사용자가 동시성 개념(스레드=일꾼, 스레드 풀=작업장, 카운터 경쟁 상태, Future=영수증)을 모를 때는 코드 조각을 아주 잘게 나눠(필드 선언 → setUp → tearDown → 스레드 풀/카운터 → 작업 던지기 → 대기 → 검증) 한 조각씩 작성시키고 확인하는 방식이 효과적이었다. 다음에도 생소한 개념은 이 정도로 잘게 쪼개는 게 좋다.
+- README.md 신규 작성 (Codex가 코드를 읽고 직접 작성, 문서 정리 요청에 해당): 소개, 기술 스택, 실행 방법(DB 생성·`.env`·백엔드/프론트 실행·테스트 실행), 주요 화면 표, 핵심 문제 해결 4가지(예약 시간 충돌, 동시성 제어, 접근 제어, JWT 인증), 알려진 제한사항.
+- ERD.md 신규 작성: User/Vehicle/CarZone/Reservation/Payment 엔티티 필드와 관계(User 1:N Reservation, Vehicle 1:N Reservation, CarZone 1:N Vehicle, Reservation 1:1 Payment)를 Mermaid erDiagram으로 정리. 모든 컨트롤러·엔티티를 서브에이전트로 전수 조사해 작성.
+- API.md 신규 작성: 전체 컨트롤러(Auth/User/Vehicle/CarZone/Reservation/Payment + Admin 컨트롤러들)의 엔드포인트를 Method/경로/설명/인증 요구사항 표로 정리. `SecurityConfig` 기준 접근 제어 요약 포함.
+  - 이 조사 과정에서 `SecurityConfig`에 `POST /api/vehicles`가 이미 ADMIN 역할로 제한되어 있음을 코드로 확인했다(아래 미검증 항목 참고 — 코드 설정 확인일 뿐 자동화 테스트로 검증된 것은 아님).
 
-## 2. 미검증 (변동 없음)
+## 2. 미검증
 
-- USER 토큰으로 POST /api/vehicles(차량 등록) 거부.
+- USER 토큰으로 POST /api/vehicles(차량 등록) 거부 — `SecurityConfig`에 ADMIN 역할 제한 설정은 확인됨. 다만 자동화 테스트(또는 Postman 실제 호출)로 직접 검증한 적은 없음.
 - 결제(Payment) 쪽의 타인 접근 거부는 아직 테스트하지 않았다(PaymentService에 동일한 체크가 있는지 미확인).
-- 모바일 반응형, API 주소(localhost:8080, 프론트 5개 파일에 하드코딩 확인됨) 환경변수 분리, 배포 환경 CORS, 시드 데이터, README·ERD·API 문서.
+- 모바일 반응형, API 주소(localhost:8080, 프론트 5개 파일에 하드코딩 확인됨) 환경변수 분리, 배포 환경 CORS, 시드 데이터.
 - 결제는 Mock이며 실제 결제 제공업체 연동이 아니다.
+- README의 "주요 화면" 섹션은 스크린샷 없이 표로만 작성됨 (실제 화면 캡처는 아직 없음).
 
 ## 3. 다음 작업
 
-- README(소개, 스택, 실행 방법, 화면, 핵심 문제 해결), ERD, API 목록 작성.
-- 프론트 API 주소 환경변수 분리, 시드 데이터 추가, 반응형 확인, 배포 순서로 진행.
+- 프론트 API 주소(`frontend/src/api/axiosInstance.js` 등 5개 파일에 하드코딩된 `http://localhost:8080`) 환경변수로 분리.
+- 시드 데이터 추가, 반응형 확인, 배포 순서로 진행.
 
 ---
 
