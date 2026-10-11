@@ -59,13 +59,25 @@ JWT_SECRET=임의의_32바이트_이상_랜덤_문자열
 
 ### 5. 프론트엔드 실행
 
+`frontend/.env.example`을 복사해 `frontend/.env`를 만들고, 백엔드 API 주소를 설정합니다.
+
 ```bash
 cd frontend
+cp .env.example .env
+```
+
+```
+VITE_API_BASE_URL=http://localhost:8080
+```
+
+그 다음 의존성 설치 후 개발 서버를 실행합니다.
+
+```bash
 npm install
 npm run dev
 ```
 
-Vite 개발 서버(기본 `http://localhost:5173`)가 뜨고, 백엔드(`http://localhost:8080`)로 API를 호출합니다.
+Vite 개발 서버(기본 `http://localhost:5173`)가 뜨고, `.env`에 설정한 주소(기본 `http://localhost:8080`)로 API를 호출합니다.
 
 ### 6. 테스트 실행
 
@@ -106,6 +118,5 @@ Vite 개발 서버(기본 `http://localhost:5173`)가 뜨고, 백엔드(`http://
 ## 현재 진행 상황 / 알려진 제한사항
 
 - 결제는 Mock이며 실제 PG사 연동은 되어 있지 않습니다.
-- API 주소가 아직 프론트엔드 코드에 하드코딩되어 있어 환경변수 분리가 필요합니다.
 - 모바일 반응형, 배포, 시드 데이터 투입은 진행 예정입니다.
 - 상세 진행 기록은 `codex.note`를 참고하세요.

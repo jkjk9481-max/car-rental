@@ -1,4 +1,4 @@
-// 이 파일의 뜻은 백엔드 기본 주소는 http://localhost:8080이고 ,
+// 이 파일의 뜻은 백엔드 기본 주소를 .env의 VITE_API_BASE_URL에서 읽어오고 ,
 // localStorage에 accessToken이 있으면
 // 모든 요청에 Authorization : Bearer 토큰 자동 추가
 
@@ -6,7 +6,7 @@
 import axios from "axios";
 
 const axiosInstance = axios.create({
-    baseURL: "http://localhost:8080",
+    baseURL: import.meta.env.VITE_API_BASE_URL,
 });
 
 axiosInstance.interceptors.request.use((config) => {
