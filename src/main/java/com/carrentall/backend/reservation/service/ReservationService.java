@@ -79,7 +79,7 @@ public class ReservationService {
         //     조건을 모두 통과하면
         //     User + Vehicle + 시작 시간 + 종료 시간으로
         //     Reservation 객체를 만든다
-        boolean hasConflict = reservationRepository.existsByVehicleAndStatusAndStartAtLessThanAndEndAtGreaterThan(vehicle , ReservationStatus.RESERVED , request.getEndAt(), request.getStartAt());
+            boolean hasConflict = reservationRepository.existsByVehicleAndStatusAndStartAtLessThanAndEndAtGreaterThan(vehicle , ReservationStatus.RESERVED , request.getEndAt(), request.getStartAt());
         //  DB에서 같은 차량이고 상태가 RESERVED이면서, 기존 시작 시간이 새 종료 시간보다 빠르고 기존 종료 시간이 새 시작 시간보다 늦은 예약이 존재하는지 확인하여 그 결과를 hasConflict에 저장한다
         //  request.getEndAt(),   // 기존 startAt < 새 endAt
         //  request.getStartAt()  // 기존 endAt > 새 startAt
@@ -141,7 +141,7 @@ public class ReservationService {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("사용자가 존재하지 않습니다."));
 
-        Reservation reservation = reservationRepository.findWithLockById(reservationId)
+        Reservation reservation = reservationRepository.findWithLockById(   reservationId)
                 .orElseThrow(() -> new ReservationNotFoundException("예약을 찾을 수 없습니다."));
 
         if(!reservation.getUser().getId().equals(user.getId())){
