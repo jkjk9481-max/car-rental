@@ -63,6 +63,14 @@ public class ReservationService {
             throw new InvalidReservationTimeException("과거 시간으로 예약할 수 없습니다.");
         }
 
+        Duration.between(request.getStartAt(), request.getEndAt());
+        if(request.getEndAt().isAfter(request.getStartAt().plusDays(7))) {
+            {
+                throw new InvalidReservationTimeException("예약 기간은 최대 7일까지 가능합니다.");
+
+            }
+        }
+
 
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("예약할 수 없는 사용자입니다."));
@@ -93,6 +101,8 @@ public class ReservationService {
 
         return toResponse(reservation);
     }
+
+
 
     @Transactional(readOnly = true) // 조회
     public List<ReservationResponse> getMyReservations(String email){
@@ -231,6 +241,8 @@ public class ReservationService {
         return response;
 
     }
+
+
 
 
 
