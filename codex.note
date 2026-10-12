@@ -1,6 +1,35 @@
 
 # Car Rental / Car Sharing Project Note
 
+# 2026-10-12 최신 진행 기록: 시드 데이터(DataInitializer) 구현 완료
+
+## 0. 가장 먼저 읽을 요약
+
+- 아래 2026-10-11 기록보다 이 기록이 최신이다.
+- 시드 데이터(앱 기동 시 카존 1 + 차량 2 + 유저 2 자동 삽입) 구현 및 검증 완료.
+- 커밋 98e9976("예약 생성시 일주일 초과하면 예약 불가능 코드 구현")은 이 기록 이전에 사용자가 이미 작성한 백엔드 코드이며, 지금까지 codex.note에 기록되지 않았었다. 리뷰·테스트 여부 미확인.
+- 다음 작업은 모바일 반응형 확인 → 배포 순서.
+
+## 1. 구현·테스트됨 (프론트 아님, Codex는 개념을 단계별로 쪼개 설명, 코드는 사용자가 직접 작성)
+
+- `DataInitializer`(`config` 패키지, `CommandLineRunner` 구현): 서버 기동 시 users 테이블이 비어있으면 CarZone 1개("강남 카존") + Vehicle 2대(아반떼, 스포티지) + User 2명(`admin@test.com`/ADMIN, `user@test.com`/USER)을 자동 삽입.
+  - `userRepository.count() > 0`이면 즉시 `return`하여 재시작할 때마다 중복 삽입되지 않게 가드.
+  - 비밀번호는 `passwordEncoder.encode()`로 암호화해 저장(`AuthService.signup()`과 동일 방식).
+- `User.java`에 `changeRole(Role role)` 메서드 추가: 기존 생성자가 `Role.USER`로 고정되어 있어 ADMIN 계정을 만들 방법이 없었음. `Vehicle.changeStatus` 패턴을 그대로 따름.
+- 검증: `./gradlew compileJava` 빌드 성공. 서버 최초 기동 시 로그에 `insert into carzones/vehicles/users` 확인. 서버 재기동 시 insert 없이 count 쿼리만 실행되어 중복 방지 확인. curl로 `admin@test.com`/`user@test.com` 로그인 테스트 — 둘 다 200 + 올바른 role이 담긴 JWT 발급 확인, 틀린 비밀번호는 401 거부 확인.
+- 부수 발견: DB에 예전 수동 테스트로 남아있던 vehicle 행 중 `car_zone_id`가 NULL인 데이터가 있어 Hibernate 스키마 마이그레이션 경고가 발생했음(서버 기동을 막는 치명적 에러는 아니었음). pgAdmin에서 `TRUNCATE TABLE payments, reservations, vehicles, carzones, users RESTART IDENTITY CASCADE;`로 정리해 해소.
+
+## 2. 미검증
+
+- (2026-10-11 기록과 동일, 변동 없음) USER 토큰으로 차량 등록 거부, 결제(Payment)의 타인 접근 거부, 모바일 반응형, 배포 환경 CORS.
+- 커밋 98e9976의 "예약 일주일 초과 제한" 로직 — 코드 리뷰·테스트 여부 미확인.
+
+## 3. 다음 작업
+
+- 모바일 반응형 확인 → 배포 순서로 진행.
+
+---
+
 # 2026-10-11 최신 진행 기록: 동시 예약 테스트 작성 완료 — 자동화 테스트 3종 전부 완료
 
 ## 0. 가장 먼저 읽을 요약
