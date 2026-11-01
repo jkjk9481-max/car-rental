@@ -63,12 +63,8 @@ public class ReservationService {
             throw new InvalidReservationTimeException("과거 시간으로 예약할 수 없습니다.");
         }
 
-        Duration.between(request.getStartAt(), request.getEndAt());
         if(request.getEndAt().isAfter(request.getStartAt().plusDays(7))) {
-            {
-                throw new InvalidReservationTimeException("예약 기간은 최대 7일까지 가능합니다.");
-
-            }
+            throw new InvalidReservationTimeException("예약 기간은 최대 7일까지 가능합니다.");
         }
 
 

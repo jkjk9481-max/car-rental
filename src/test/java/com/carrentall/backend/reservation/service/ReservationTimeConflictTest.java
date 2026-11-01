@@ -49,6 +49,7 @@ class ReservationTimeConflictTest {
     private LocalDateTime tomorrow10; // 내일 10:00. 시간 계산의 기준점으로 쓴다.
 
     // @BeforeEach : 각 @Test가 실행되기 직전에 매번 실행된다. 공통 준비(given)를 여기에 모은다.
+    // 유저, 카존, 차량을 미리 만드는 부분
     @BeforeEach
     void setUp() {
         userRepository.save(new User("tester@test.com", "password", "테스터", "010-0000-0000"));
@@ -92,6 +93,25 @@ class ReservationTimeConflictTest {
         // then: 예외 없이 예약이 만들어졌고, 시작 시각이 요청과 같다.
         // assertEquals(기대값, 실제값) 순서로 쓴다.
         assertEquals(tomorrow10.plusHours(4), response.getStartAt());
+    }
+
+    @Test
+    void 예약기간이_정확히_7일이면_허용된다(){
+        // 1. given (준비): 시간 값 정하기
+        LocalDateTime startAt = tomorrow10;
+        LocalDateTime endAt = tomorrow10.plusDays(7);
+        // 2. when  (실행): 서비스 메서드 호출
+        ReservationResponse response = reservationService.createReservation(
+                request(startAt , endAt) , "tester@test.com");
+        //   ③ 왼쪽: 결과를 담는 그릇              ① 오른쪽: 예약 생성 호출 (여기에 시작·반납·이메일을 넘김)
+
+        // 3. then  (검증): 결과 확인
+        assertEquals(endAt , response.getEndAt());
+    }
+
+    @Test
+    void 예약기간이_7일을_1분_넘기면_거절된다(){
+
     }
 
     // 요청 DTO에는 setter와 모든 필드를 받는 생성자가 없다. 테스트에서는 ReflectionTestUtils로
