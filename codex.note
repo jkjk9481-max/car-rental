@@ -1,6 +1,47 @@
 
 # Car Rental / Car Sharing Project Note
 
+# 2026-11-02 최신 진행 기록: 7일 경계 테스트 완성, VehicleAccessControlTest(권한 거부) 신규 작성, AI 협업 방식 전환
+
+## 0. 가장 먼저 읽을 요약
+
+- 아래 2026-10-12 기록보다 이 기록이 최신이다.
+- 커밋 7a291ee에서 비어있던 `예약기간이_7일을_1분_넘기면_거절된다()`를 사용자가 직접 채워 완성, `ReservationTimeConflictTest` 4개 전부 통과.
+- `VehicleAccessControlTest` 신규 작성: USER 권한으로 `POST /api/vehicles` 호출 시 403 거부되는지 검증. 1개 테스트 통과.
+- Claude Code와의 협업 방식을 "다음 단계를 바로 알려주기"에서 "질문으로 먼저 생각을 유도하고, 사용자가 직접 작성한 뒤 리뷰"하는 방식으로 전환. 사용자가 실력 향상을 위해 요청함.
+- 다음 작업: 같은 클래스에 ADMIN 역할로는 성공하는 케이스 추가 → Payment 타인 접근 거부 테스트 → 모바일 반응형 → 배포.
+
+## 1. 구현·테스트됨
+
+- `ReservationTimeConflictTest.예약기간이_7일을_1분_넘기면_거절된다()`: `assertThrows(InvalidReservationTimeException.class, ...)`로 7일+1분 요청이 거절되는지 검증. 바로 위 겹침 테스트와 같은 `assertThrows` 패턴.
+- `VehicleAccessControlTest`(`vehicle/controller` 패키지, 신규): `@SpringBootTest` + `@AutoConfigureMockMvc` + `@ActiveProfiles("test")`.
+  - 핵심 포인트: 차량 등록의 ADMIN 전용 제한은 `SecurityConfig`의 `requestMatchers(HttpMethod.POST, "/api/vehicles").hasRole("ADMIN")`에 있다 — 즉 HTTP 필터 체인 레벨 규칙이라, `ReservationTimeConflictTest`처럼 서비스 메서드를 직접 호출하는 방식으로는 이 규칙을 검증할 수 없다. 반드시 `MockMvc`로 실제 HTTP 요청을 흘려야 필터를 통과시켜 검증 가능.
+  - `@WithMockUser(roles = "USER")`로 실제 로그인/JWT 없이 USER 권한 인증 상태를 흉내냄.
+  - `VehicleCreateRequest`는 `@NoArgsConstructor`뿐이라 `ReflectionTestUtils.setField(대상, "필드이름(문자열)", 넣을값)`으로 생성 — 이 과정에서 두 가지를 반복해서 헷갈림: (1) 3번째 인자에 아직 비어있는 자기 자신의 getter를 넣는 자기참조 실수, (2) 2번째 인자(필드이름 문자열)와 3번째 인자(실제 값)의 역할을 반대로 넣는 실수. 다음에 비슷한 DTO 만들 때 이 두 가지를 다시 짚어줄 필요가 있음.
+  - `mockMvc.perform(...)`은 `throws Exception`을 던지는 메서드라 테스트 메서드에 `throws Exception` 선언이 필요함 — 처음엔 이걸 몰라서 컴파일 에러.
+  - `AutoConfigureMockMvc` import 경로가 `org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc`, `ObjectMapper`가 `tools.jackson.databind.ObjectMapper`로 돌아간다 — Spring Boot 4.1.0 / Jackson 3 기반이라 기존에 흔히 보이는 Spring Boot 3.x 경로(`org.springframework.boot.test.autoconfigure.web.servlet...`, `com.fasterxml.jackson...`)와 다르다. 이번 프로젝트에서 새로 확인된 사실.
+
+## 2. AI 협업 방식 (사용자 요청으로 기록)
+
+- 기존 방식: Claude가 다음에 쓸 코드를 거의 그대로 알려주고 사용자가 타이핑 → 완성은 빠르지만 "어떤 상황에 뭘 써야 하는지 스스로 판단하는 힘"이 늘지 않는다는 문제가 있었음.
+- 전환한 방식: Claude가 정답을 바로 주지 않고 질문을 먼저 던짐(예: "이 상황에서 어떤 어노테이션이 필요할까?") → 사용자가 직접 추측/작성 → Claude가 결과를 리뷰하며 틀린 부분과 이유를 짚어줌 → 사용자가 다시 고침. 틀리는 과정 자체를 학습으로 취급.
+- 이 방식이 포트폴리오/학습 목적 프로젝트에 특히 맞다고 판단: "AI가 다 짜준 코드"보다 "직접 짜고 AI로 검증·리뷰받은 코드"가 실력과 설득력 둘 다에 유리함.
+- 반복 작업(보일러플레이트, 테스트 스캐폴딩)은 AI가 대신하고, 핵심 로직·설계 판단은 사용자가 직접 하는 역할 분담도 함께 논의함.
+
+## 3. 미검증
+
+- (2026-10-12 기록과 동일, 변동 없음) USER 토큰으로 차량 등록 거부는 이번에 검증 완료되었으나, 결제(Payment)의 타인 접근 거부는 여전히 미검증.
+- `VehicleAccessControlTest`에 ADMIN 역할로는 실제로 성공(200/201)하는 케이스가 아직 없음 — 거부만 확인했고 허용은 미확인.
+- 모바일 반응형, 배포 환경 CORS는 여전히 미착수.
+
+## 4. 다음 작업
+
+- `VehicleAccessControlTest`에 ADMIN 역할 성공 케이스 테스트 추가.
+- Payment 타인 접근 거부 테스트 작성.
+- 모바일 반응형 확인 → 배포 순서로 진행.
+
+---
+
 # 2026-10-12 최신 진행 기록: 시드 데이터(DataInitializer) 구현 완료
 
 ## 0. 가장 먼저 읽을 요약

@@ -4,6 +4,7 @@ import com.carrentall.backend.carzone.entity.CarZone;
 import com.carrentall.backend.carzone.repository.CarZoneRepository;
 import com.carrentall.backend.reservation.dto.ReservationCreateRequest;
 import com.carrentall.backend.reservation.dto.ReservationResponse;
+import com.carrentall.backend.reservation.exception.InvalidReservationTimeException;
 import com.carrentall.backend.reservation.exception.ReservationTimeConflictException;
 import com.carrentall.backend.user.entity.User;
 import com.carrentall.backend.user.repository.UserRepository;
@@ -111,7 +112,22 @@ class ReservationTimeConflictTest {
 
     @Test
     void 예약기간이_7일을_1분_넘기면_거절된다(){
+        LocalDateTime startAt = tomorrow10;
+        LocalDateTime endAt = tomorrow10.plusDays(7).plusMinutes(1);
 
+        assertThrows(InvalidReservationTimeException.class , () ->
+                reservationService.createReservation(request(startAt , endAt) , "tester@test.com"));
+        
+        // 왜 assertThrows를 쓰는가??
+        // 이전 두 테스트 (assertEquals를 쓰는것들) "정상적으로 성공해야하는 경우"를 검증한다
+        // 메서드가 리턴값을 주니까 그 값을 받아서 기대값과 비교하면됩니다
+        
+        // 반면 이 테스트는 "실패해야하는 경우"를 검증한다 , 이 호출이 예외를 던지는가를 확인해야해서 쓴다
+
+        // 동작 흐름
+        //1. assertThrows가 람다를 실행 → 내부에서 createReservation 호출 → 서비스가 7일 초과를 감지하고 InvalidReservationTimeException을 던짐
+        //2. assertThrows가 그 예외를 캐치해서 클래스가 InvalidReservationTimeException과 일치하는지 확인
+        //3. 일치하면 테스트 통과, 일치 안 하거나 예외가 안 던
     }
 
     // 요청 DTO에는 setter와 모든 필드를 받는 생성자가 없다. 테스트에서는 ReflectionTestUtils로
