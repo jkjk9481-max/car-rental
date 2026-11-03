@@ -50,11 +50,33 @@ public class VehicleAccessControlTest {
     @WithMockUser(roles = "USER")
     // JUnit 테스트에서는 보통 그냥 메서드에 throws Exception을 붙여서 써야함
     void USER_권한으로_차량_등록을_시도하면_거부된다() throws Exception {
+        mockMvc.perform(post("/api/vehicles") // 진짜 서버를 켜지않고 , URL로 POST 요청을 보내는걸 흉내낸다 하지만 Security필터 , Controller , Service까지 실제 코드가 다 동작한다 "HTTP 요청만 실제로 안보내쓸뿐" 나머지는 진짜
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request()))) // VehicleCreateRequest 객체(정보)를 JSON 문자열로 바꿔서 요청본문에 담는다
+                .andExpect(status().isForbidden());
+                // 응답이 403이어야 테스트 통과 , 위에 붙은 @WithMockUser(roles = "USER") 때문에
+                // 이 요청은 USER 권한으로 인증된 상태로 들어가고, SecurityConfig에서 POST /api/vehicles는 ADMIN만 허용이라 403으로
+                //  막혀야 맞습니다.
+
+    }
+
+    // 데이터 흐름 (두 테스트 공통)
+    //request() 호출 → VehicleCreateRequest 객체 생성
+    //→ JSON 문자열로 변환
+    //→ mockMvc가 POST /api/vehicles로 "요청"
+    //→ Security 필터가 @WithMockUser의 role을 확인
+    //   ├─ USER면: 여기서 바로 403 반환, Controller까지 못 감
+    //   └─ ADMIN이면: 통과 → Controller → Service → DB 저장 → 200 반환
+    //→ andExpect가 실제 응답 상태코드와
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    // "USER 테스트와 같은 이유로 throws Exception 필요"
+    void ADMIN_권한으로_차량_등록을_시도하면_성공한다() throws Exception{
         mockMvc.perform(post("/api/vehicles")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request())))
-                .andExpect(status().isForbidden());
-
+                .andExpect(status().isOk());
     }
 
     private VehicleCreateRequest request(){
@@ -71,10 +93,4 @@ public class VehicleAccessControlTest {
 
         return request;
     }
-
-
-
-
-
-
 }
